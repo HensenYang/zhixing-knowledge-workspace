@@ -3,11 +3,13 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 from uuid import UUID, uuid4
 import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import zipfile
 
@@ -19,6 +21,9 @@ from pydantic import BaseModel, Field
 import psycopg2
 from psycopg2 import sql
 from psycopg2.extras import Json, RealDictCursor
+
+from .exporters import material_docx, material_markdown, material_pdf
+from .importers import import_locator, import_pdf
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(Path(os.environ.get('WORKSPACE_ENV_FILE', str(ROOT / '.env'))))
@@ -83,6 +88,18 @@ class ObjectUpdate(ObjectInput):
     version: int = Field(ge=1)
     archived_at: datetime | None = None
 
+SourceType = Literal['auto','arxiv','doi','github','mcp']
+
+class SourcePreviewInput(BaseModel):
+    source: str = Field(min_length=1,max_length=4000)
+    source_type: SourceType = 'auto'
+
+class SourceImportCommit(BaseModel):
+    source_type: Literal['arxiv','doi','github','pdf','mcp']
+    source_key: str = Field(min_length=1,max_length=1000)
+    extracted_metadata: dict = Field(default_factory=dict)
+    object: ObjectInput
+
 def validate_object(data):
     if not data.title.strip():
         raise HTTPException(422, '标题不能为空。')
@@ -103,6 +120,14 @@ def object_with_tags(cursor, row):
     cursor.execute('SELECT name FROM tags JOIN object_tags ON tags.id=tag_id WHERE object_id=%s ORDER BY name', (row['id'],))
     return {**row, 'tags':[tag['name'] for tag in cursor.fetchall()]}
 
+def add_duplicate_hints(preview):
+    with db() as cursor:
+        cursor.execute('''SELECT id,title,source_url FROM objects WHERE deleted_at IS NULL AND
+            (lower(title)=lower(%s) OR (%s IS NOT NULL AND source_url=%s)) ORDER BY updated_at DESC LIMIT 5''',
+            (preview['title'],preview.get('source_url'),preview.get('source_url')))
+        preview['possible_duplicates'] = cursor.fetchall()
+    return preview
+
 @app.get('/api/health')
 def health():
     try:
@@ -112,6 +137,45 @@ def health():
         return {'service':'ready','database':'ready','schema_version':version['version'] if version else None}
     except HTTPException as error:
         return {'service':'ready','database':'unavailable','message':error.detail}
+
+@app.get('/api/source-imports/providers')
+def source_import_providers():
+    return {
+        'providers': ['arxiv','doi','github','pdf'],
+        'mcp': {
+            'enabled': bool(os.environ.get('MCP_IMPORT_SERVER_URL','').strip()),
+            'tool': os.environ.get('MCP_IMPORT_TOOL','import_source'),
+        },
+    }
+
+@app.post('/api/source-imports/preview')
+async def preview_source(data: SourcePreviewInput):
+    return add_duplicate_hints(await import_locator(data.source,data.source_type))
+
+@app.post('/api/source-imports/preview-file')
+async def preview_source_file(file: UploadFile = File(...)):
+    content = await file.read(32 * 1024 * 1024 + 1)
+    return add_duplicate_hints(import_pdf(content,Path(file.filename or 'document.pdf').name))
+
+@app.post('/api/source-imports/commit',status_code=201)
+def commit_source_import(data: SourceImportCommit):
+    validate_object(data.object)
+    with db() as cursor:
+        cursor.execute('SELECT object_id FROM source_imports WHERE source_type=%s AND source_key=%s',
+            (data.source_type,data.source_key))
+        existing=cursor.fetchone()
+        if existing:
+            raise HTTPException(409,'该来源已经导入。请打开已有资料，或修改后使用普通新建笔记。')
+        item=data.object
+        cursor.execute('''INSERT INTO objects(kind,title,summary,body_md,source_url,reading_status,mastery_status,metadata)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *''',
+            (item.kind,item.title.strip(),item.summary,item.body_md,item.source_url,item.reading_status,item.mastery_status,json_value(item.metadata)))
+        row=cursor.fetchone()
+        set_tags(cursor,row['id'],item.tags)
+        cursor.execute('''INSERT INTO source_imports(source_type,source_key,source_url,original_name,extracted_metadata,object_id)
+            VALUES (%s,%s,%s,%s,%s,%s)''',
+            (data.source_type,data.source_key,item.source_url,data.extracted_metadata.get('file_name'),json_value(data.extracted_metadata),row['id']))
+        return object_with_tags(cursor,row)
 
 @app.get('/api/objects')
 def list_objects(q: str = '', kind: str = '', archived: bool = False, limit: int = 200, offset: int = 0):
@@ -698,8 +762,40 @@ def download_attachment(identifier: UUID):
         raise HTTPException(404,'附件文件未找到。')
     return FileResponse(path,filename=row['original_name'],media_type=row['mime_type'])
 
-TABLES = ['objects','tags','object_tags','relations','relation_evidence','canvases','canvas_items','canvas_edges','learning_sessions','session_objects','experiment_runs','run_artifacts','attachments','object_attachments','object_revisions','canvas_revisions']
-JSON_FIELDS = {'metadata','viewport','properties','config','environment','metrics','snapshot'}
+def export_material_record(identifier):
+    with db() as cursor:
+        item=object_with_tags(cursor,require(cursor,'objects',identifier))
+        cursor.execute('''SELECT r.*,a.title AS source_title,b.title AS target_title
+            FROM relations r JOIN objects a ON a.id=r.source_id JOIN objects b ON b.id=r.target_id
+            WHERE r.deleted_at IS NULL AND (r.source_id=%s OR r.target_id=%s) ORDER BY r.created_at''',
+            (str(identifier),str(identifier)))
+        relations=cursor.fetchall()
+        for relation in relations:
+            cursor.execute('SELECT * FROM relation_evidence WHERE relation_id=%s ORDER BY id',(relation['id'],))
+            relation['evidence']=cursor.fetchall()
+        cursor.execute('''SELECT a.original_name,a.mime_type,a.size_bytes FROM attachments a
+            JOIN object_attachments oa ON oa.attachment_id=a.id
+            WHERE oa.object_id=%s AND a.deleted_at IS NULL ORDER BY a.created_at''',(str(identifier),))
+        attachments=cursor.fetchall()
+    return {'object':item,'relations':relations,'attachments':attachments}
+
+@app.get('/api/objects/{identifier}/export')
+def export_material(identifier: UUID, format: Literal['md','docx','pdf']='md'):
+    record=export_material_record(identifier)
+    markdown=material_markdown(record)
+    title=record['object']['title'].strip() or 'knowledge-material'
+    safe=re.sub(r'[\\/:*?"<>|\x00-\x1f]+','-',title).strip(' .')[:80] or 'knowledge-material'
+    fallback=f'knowledge-material.{format}'
+    headers={'Content-Disposition':f"attachment; filename={fallback}; filename*=UTF-8''{quote(f'{safe}.{format}')}"}
+    if format=='md':
+        return Response(markdown.encode('utf-8'),media_type='text/markdown; charset=utf-8',headers=headers)
+    if format=='docx':
+        return Response(material_docx(markdown),media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',headers=headers)
+    return Response(material_pdf(markdown),media_type='application/pdf',headers=headers)
+
+TABLES = ['objects','tags','object_tags','relations','relation_evidence','canvases','canvas_items','canvas_edges','learning_sessions','session_objects','experiment_runs','run_artifacts','attachments','object_attachments','object_revisions','canvas_revisions','source_imports']
+BACKUP_V1_TABLES = TABLES[:-1]
+JSON_FIELDS = {'metadata','viewport','properties','config','environment','metrics','snapshot','extracted_metadata'}
 
 @app.get('/api/export')
 def export_backup():
@@ -710,7 +806,7 @@ def export_backup():
         for table in TABLES:
             cursor.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table)))
             tables[table] = jsonable_encoder(cursor.fetchall())
-        manifest = {'format':'embodied-knowledge','version':1,'created_at':datetime.now().isoformat(),'tables':tables,'external_artifacts_included':False}
+        manifest = {'format':'embodied-knowledge','version':2,'created_at':datetime.now().isoformat(),'tables':tables,'external_artifacts_included':False}
         with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as archive:
             archive.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False))
             for item in tables['attachments']:
@@ -730,9 +826,16 @@ def inspect_backup(content):
         if len(archive.namelist()) != len(set(archive.namelist())):
             raise HTTPException(422,'备份包含重复文件名。')
         manifest = json.loads(archive.read('manifest.json'))
-        if manifest.get('format') != 'embodied-knowledge' or manifest.get('version') != 1 or set(manifest.get('tables',{})) != set(TABLES):
+        version=manifest.get('version')
+        table_names=set(manifest.get('tables',{}))
+        if manifest.get('format') != 'embodied-knowledge' or not (
+            (version == 1 and table_names == set(BACKUP_V1_TABLES)) or
+            (version == 2 and table_names == set(TABLES))
+        ):
             raise HTTPException(422,'备份格式或版本不支持。')
         tables = manifest['tables']
+        if version == 1:
+            tables['source_imports']=[]
         if not all(isinstance(rows,list) and all(isinstance(row,dict) for row in rows) for rows in tables.values()):
             raise HTTPException(422,'备份表结构无效。')
         for item in tables['attachments']:
