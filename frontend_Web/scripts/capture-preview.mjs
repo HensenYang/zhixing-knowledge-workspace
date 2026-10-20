@@ -1,0 +1,31 @@
+import {chromium} from '@playwright/test'
+import fs from 'node:fs'
+import path from 'node:path'
+const output=path.resolve('../storage/screenshots')
+fs.mkdirSync(output,{recursive:true})
+const browser=await chromium.launch({channel:'chrome',headless:true})
+const page=await browser.newPage({viewport:{width:1440,height:1000}})
+await page.goto('http://127.0.0.1:5174/')
+const response=await page.request.get('http://127.0.0.1:8001/api/objects')
+let objects=await response.json()
+if(objects.length===0){await page.getByRole('button',{name:'建立首批学习对象'}).click();await page.getByRole('heading',{name:'4090 可运行哪种 UnifoLM 配置？'}).waitFor();objects=await (await page.request.get('http://127.0.0.1:8001/api/objects')).json()}
+await page.waitForTimeout(400)
+await page.screenshot({path:path.join(output,'home.png'),fullPage:true})
+await page.goto('http://127.0.0.1:5174/graph');await page.waitForResponse(r=>r.url().includes('/api/graph'));await page.waitForTimeout(400)
+await page.screenshot({path:path.join(output,'graph.png'),fullPage:true})
+const canvas=await (await page.request.post('http://127.0.0.1:8001/api/canvases',{data:{title:'VLA × 世界模型：我的研究路径'}})).json()
+const byTitle=Object.fromEntries(objects.map(o=>[o.title,o]))
+const selected=['VLA 与动作表示','世界模型','UnifoLM-WMA-0','4090 可运行哪种 UnifoLM 配置？']
+const items=selected.map((title,index)=>({id:crypto.randomUUID(),item_type:'object',object_id:byTitle[title].id,x:index%2*340+25,y:Math.floor(index/2)*230+55,width:260,height:165,properties:{}}))
+const edges=[[0,1,'比较两种决策接口'],[2,1,'世界模型基础'],[3,2,'部署验证目标']].map(([a,b,label])=>({id:crypto.randomUUID(),source_item_id:items[a].id,target_item_id:items[b].id,label,properties:{}}))
+await page.request.put(`http://127.0.0.1:8001/api/canvases/${canvas.id}/document`,{data:{version:1,title:canvas.title,viewport:{x:10,y:20,zoom:0.85},items,edges}})
+await page.goto(`http://127.0.0.1:5174/canvases/${canvas.id}`)
+await page.locator('.react-flow__edge').first().waitFor();await page.waitForTimeout(300)
+await page.screenshot({path:path.join(output,'canvas.png'),fullPage:true})
+await page.goto('http://127.0.0.1:5174/knowledge/'+byTitle['世界模型'].id)
+await page.getByRole('button',{name:'阅读',exact:true}).click();await page.waitForTimeout(300)
+await page.screenshot({path:path.join(output,'note.png'),fullPage:true})
+await page.setViewportSize({width:390,height:844});await page.goto('http://127.0.0.1:5174/');await page.waitForTimeout(500)
+await page.screenshot({path:path.join(output,'mobile.png'),fullPage:true})
+await browser.close()
+console.log('Captured verified example workspace in storage/screenshots.')

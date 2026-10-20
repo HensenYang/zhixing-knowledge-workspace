@@ -1,0 +1,2102 @@
+{
+  "group": "unitree-group-01",
+  "verified_on": "2026-10-01",
+  "commits": {
+    "wma": "3e198de68de55f93f24b3ad623dd499390aaee45",
+    "vla": "ff6c39aeb0454cfb95418c66aef40ca777f935c1",
+    "wla": "0a1aa87be8f775c7883fcd27216e3666ac18a8c5"
+  },
+  "objects": [
+    {
+      "key": "hub",
+      "kind": "task",
+      "title": "第一组研究：宇树开源模型（Unitree Open Models）",
+      "summary": "先建立模型谱系与证据，再完成无机器人离线实验，最终形成可分享的技术讲解。",
+      "body_md": "# 学习目标（Learning Objectives）\n你已有 PyTorch 训练经验，本组从模型输入、输出与训练目标切入，数学和机器人基础按需要补齐。目标是能讲清五个模型、追踪一条推理路径，并用实际结果支撑分享。\n\n## 执行顺序与完成条件（Sequence and Completion Gates）\n1. **模型全景（Model Landscape）**：读“对比与发布状态”，画出 WMA 与 VLA 两条路线，再画 ER-1 → ER-Flow → WLA 的有出处演进关系。通过条件：用五句话分别描述五个模型的输入、输出与用途。\n2. **数据与动作（Data and Actions）**：读动作空间与归一化笔记，解释 54 维动作、60 维状态、120 维投影器输入的区别。通过条件：能解释哪些维度无效、动作属于哪个坐标系。\n3. **代码拆解（Code Walkthrough）**：按各模型笔记的入口、主干、头、后处理顺序读代码。通过条件：对每个模型完成一张张量流转表，而非只背结构名。\n4. **离线复现（Offline Reproduction）**：先 ER-1 单图问答，再 WMA 单段视频；最后 WLA 一条本地轨迹。VLA 的 LIBERO 仿真作为第二条动作策略验证路径。通过条件：保存配置、版本、输出、峰值显存和耗时；失败也要记录。\n5. **研究分享（Research Talk）**：制作讲解提纲，区分官方宣称、代码观察和自己的实验。通过条件：每个性能数字都能回到原始来源；至少讲清两项尚未解决的问题。\n\n## 今天的第一项任务（First Task）\n打开“任务 01”，先填五模型输入／输出表。暂不下载大权重，先完成源码阅读和环境盘点。\n\n## 当前进度（Current Status）\n已完成资料收集、文本源码核对与框架录入。模型 GPU 推理、训练和机器人实验均尚未执行；任务默认待学习，实验默认待运行。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "hub",
+        "verified_on": "2026-10-01",
+        "acceptance": "完成五模型对比、数据管线说明、一项离线实测与有来源的分享提纲。",
+        "inputs": "官方资料、固定版本源码、RTX4090",
+        "outputs": "研究笔记、实验记录、分享提纲"
+      }
+    },
+    {
+      "key": "comparison",
+      "kind": "resource",
+      "title": "五模型对比与发布状态（Comparison and Release Status）",
+      "summary": "区别视频世界模型、视觉语言动作策略、具身推理基座和全身动作专家。",
+      "body_md": "# 五模型对比（Model Comparison）\n| 模型 | 主干／基座（Backbone） | 学习与输出（Learning and Output） | 首要用途（Primary Use） |\n|---|---|---|---|\n| UnifoLM-WMA-0 | 视频潜扩散结构（Video Latent Diffusion），继承 DynamiCrafter 代码 | 预测视频／状态；与扩散动作头联合做决策或仿真 | 观察未来交互，探索世界模型辅助动作 |\n| UnifoLM-VLA-0 | Qwen2.5-VL-7B → UnifoLM-VLM-Base | 图文与状态条件 → DiT 流匹配连续动作块 | 指令驱动操作与 LIBERO 仿真 |\n| UnifoLM-ER-1 | Qwen3-VL-4B | 图像和问题 → 语言、点／框等结构化理解 | 具身推理（Embodied Reasoning） |\n| UnifoLM-ER-Flow | ER-1 的继续训练版本 | 动态区域掩码词元与离散动作词元 | 交互中心世界建模与表征对齐 |\n| UnifoLM-WLA-1.0 | ER-Flow + MMDiT 动作专家，官方称约 6B | 多视角图像、语言与状态 → 连续动作块 | 跨末端执行器与全身操作 |\n\n表格综合各模型笔记中的代码证据；查看模型卡片获得逐项引用。WMA 与 VLA 是同一家族的不同技术路线，当前公开资料不足以证明它们之间是逐个权重继承；ER-1 → ER-Flow → WLA 则有明确的官方方法说明。\n\n## 发布时间线（Release Timeline）\n- 2025-09-15：WMA 训练、推理、权重；2025-09-22：部署代码。[WMA 发布记录](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/README.md)\n- 2026-01-29：VLA 训练、推理与权重。[VLA 发布记录](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/README.md)\n- 2026-09-11：ER-1、ER-Flow 权重；09-20：WLA 结构和动作专家训练；09-28：WLA-1.0-Base、微调与当前已提供的 LoRA 入口。[WLA 英文发布记录](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/README.md)\n\n## 研究边界（Evidence Boundaries）\n开源权重不等于完整原始预训练配方公开，项目展示也不等于独立复现。当前检索到的五模型官方引用以项目／仓库的杂项引用（Miscellaneous Citation）为主；没有把上游论文误标为这些模型本身的学术论文。中文和英文文档存在更新差异，优先核对固定版本英文文档与实际文件。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/README.md",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "comparison",
+        "verified_on": "2026-10-01",
+        "subtype": "documentation"
+      }
+    },
+    {
+      "key": "model:wma",
+      "kind": "model",
+      "title": "UnifoLM-WMA-0",
+      "summary": "世界模型同时承担视频交互仿真与动作策略增强，两种模式必须分别理解。",
+      "body_md": "# 定位与基座（Role and Backbone）\n世界模型—动作架构（World-Model–Action, WMA）以视频生成先验适配机器人交互。官方给出基础版（Base，Open-X 适配）和双模式版（Dual，下游五项宇树数据集适配）。[权重与训练阶段](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/README.md)\n\n代码采用潜空间视频扩散（Latent Video Diffusion）：变分自编码器（AutoencoderKL）压缩图像；冻结的开放对比图文编码器（Frozen OpenCLIP）编码文本及图像；重采样器（Resampler）产生图像条件；带时序卷积与注意力的 WMAModel 去噪视频潜变量。动作路径使用条件一维 U-Net（Conditional 1D U-Net）。[结构配置](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/configs/inference/base_model_inference.yaml)\n仓库致谢 DynamiCrafter、Diffusion Policy、ACT 和 HPT；这证明代码来源／方法关联，不能据此断言每个致谢项目都构成独立运行模块。[代码来源说明](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/README.md)\n\n## 运行拆解（Execution Walkthrough）\n1. 基础视频：`run_base_model_inference.sh` → `base_model_inference.py` → `LatentVisualDiffusion`。输入图像与指令，输出未来视频；脚本当前设置批量 1、320×512、16 帧、16 次 DDIM 采样。[基础入口](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/scripts/run_base_model_inference.sh)\n2. 交互循环：`run_world_model_interaction.sh` → `world_model_interaction.py`。读取 CSV 指令、图像、HDF5 状态及统计量；归一化与统一维度后，决策模式先产生动作，仿真模式再以动作预测视频／状态，预测观测回填队列进入下一轮。[真实调用顺序](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/scripts/evaluation/world_model_interaction.py#L566-L647)\n3. 真机链路是模型服务与机器人客户端；没有机器人时完成基础视频和模型内交互即可，不能将模型内生成结果当成真实物理环境反馈。[部署入口](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/scripts/run_real_eval_server.sh)\n\n## 融合技术（Integrated Techniques）\n视频扩散先验（Video Diffusion Prior）、图文条件（Image/Text Conditioning）、扩散动作策略（Diffusion Action Policy）、时序注意力（Temporal Attention）、状态／动作条件投影（State/Action Projection）。它属于学得的交互仿真器，不等价于 MuJoCo 的刚体动力学仿真。\n\n## 优势与待验证优化（Strengths and Testable Improvements）\n优势：未来视觉信息与动作生成可共享；可以直接观察模型对接触和物体变化的预测。研究假设：减少采样步数、混合精度、条件缓存可降低耗时，但必须同时测视觉质量与动作误差；长程生成要测漂移、物体恒常性和动作敏感性，不能只比较“视频更好看”。源码提供采样与双模式接口，不意味着具备已公开的树搜索／奖励规划器。[采样实现](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/src/unifolm_wma/models/samplers/ddim.py)\n\n## 阅读问题（Reading Questions）\n哪一次调用使用真实观测，哪一次使用预测观测？视频去噪次数与动作头更新次数是否相同？怎样验证“输入动作变了，预测结果也合理地变了”？\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-world-model-action",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "model:wma",
+        "verified_on": "2026-10-01",
+        "commit": "3e198de68de55f93f24b3ad623dd499390aaee45",
+        "weight_version": "Base/Dual",
+        "evidence_level": "official+code"
+      }
+    },
+    {
+      "key": "model:vla",
+      "kind": "model",
+      "title": "UnifoLM-VLA-0",
+      "summary": "Qwen2.5-VL 空间与动力学预训练表征，接 DiT 流匹配动作头。",
+      "body_md": "# 基座与训练阶段（Backbone and Training Stages）\n官方说明以 Qwen2.5-VL-7B 进行多任务继续预训练（Continued Pretraining），覆盖空间定位、任务分解、轨迹与动力学信息；约 340 小时清洗真机数据用于离散动作预训练，得到增强的视觉语言基座，再连接动作头。官方展示 12 类真机任务。[方法与官方评测](https://unigen-x.github.io/unifolm-vla.github.io/)\n加载器实际使用 `Qwen2_5_VLForConditionalGeneration`；发布的 UnifoLM-VLM-Base 配置显示隐藏维数 3584，训练模板中的占位维数不能取代实际模型配置。[主干接口](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/model/modules/vlm/QWen2_5.py)；[发布基座配置](https://huggingface.co/unitreerobotics/UnifoLM-VLM-Base/blob/da121034eb5681c085a17001853a0267632a796f/config.json)\n\n## 实现与张量路径（Implementation and Tensor Flow）\n图像、指令 → 处理器（Processor）形成 `input_ids / pixel_values / image_grid_thw` → VLM 最后一层特征 `[B,L,H]` → 动作头，同时输入本体状态（Proprioceptive State）→ 归一化动作块 `[B,T,D]`。[框架的 forward / predict_action](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/model/framework/unifolm_vla.py)\n动作头是扩散 Transformer（Diffusion Transformer, DiT）实现的流匹配（Flow Matching）。训练取高斯噪声与真实动作线性插值，回归速度 `action - noise`；推理从噪声迭代积分得到连续动作。不是把语言生成的自然语言指令直接交给电机。[动作头](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/model/modules/action_model/DiT_ActionHeader.py)\n状态先归一化，输出根据所选 `unnorm_key` 和统计量反归一化；动作单位、夹爪语义与环境接口仍需对齐。[推理与后处理](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/experiments/LIBERO/unifolm_vla_inference.py)\n\n## 本地运行路线（Local Execution Route）\n首选无机器人路径：UnifoLM-VLM-Base + UnifoLM-VLA-Libero + LIBERO。修改脚本中的绝对路径、仿真任务组、统计量键、试验次数，再从一个任务的一次试验开始。[LIBERO 启动脚本](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/scripts/eval_scripts/run_eval_libero.sh)\n必须检查平台常量：动作头实际引用 `ACTION_DIM / PROPRIO_DIM / NUM_ACTIONS_CHUNK`；当前 LIBERO 常量为 7／8／8，而发布 YAML 还写有 `action_horizon:16` 等字段。先严格验证权重形状与实际输出，不要按模板猜动作维数。[平台常量](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/rlds_dataloader/constants.py)；[发布配置](https://huggingface.co/unitreerobotics/UnifoLM-VLA-Libero/blob/f86b8c27ad4ad046f61de8e10d1388202735d719/config.yaml)\n\n## 优势、证据限制与优化（Strengths, Limits and Optimization）\n优势：通用图文与空间表征连接连续动作，适合指令条件多任务操作。官方 LIBERO 平均成绩为 98.7%，这是官方表格数值，未在本机复现；比较项并非本轮统一重跑，不能直接推出任何部署场景都同样领先。\n待实验：冻结主干、少步动作采样、图像词元预算、动作块执行长度对延迟和成功率的影响。长动作块会减少调用频率，也可能降低纠错频率；不能只以吞吐量作为优化指标。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-vla",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "model:vla",
+        "verified_on": "2026-10-01",
+        "commit": "ff6c39aeb0454cfb95418c66aef40ca777f935c1",
+        "evidence_level": "official+code"
+      }
+    },
+    {
+      "key": "model:er1",
+      "kind": "model",
+      "title": "UnifoLM-ER-1",
+      "summary": "基于 Qwen3-VL-4B 的具身感知与推理基座，先做单图空间问答。",
+      "body_md": "# 基座与能力（Backbone and Capabilities）\n具身推理器（Embodied Reasoner, ER）建立于 Qwen3-VL-4B，官方称使用超过 500 万条空间／具身样本，并与通用图文数据共同训练（Co-training）。任务包含点预测、检测、多图推理、二维轨迹、三维检测与空间问答。[官方模型卡](https://huggingface.co/unitreerobotics/UnifoLM-ER-1/blob/dfb321b4317a011ce80622b9305b5dbb6513241b/README.md)\n输出是语言与结构化表述，不能把 ER-1 本身等同于能直接控制 G1 的完整动作策略。架构配置声明 `Qwen3VLForConditionalGeneration`。[发布架构配置](https://huggingface.co/unitreerobotics/UnifoLM-ER-1/blob/dfb321b4317a011ce80622b9305b5dbb6513241b/config.json)\n\n## 运行方式（Execution）\n图像 + 提问 → 聊天模板（Chat Template）与视觉处理器 → 生成（Generate）→ 文本／点／框输出 → 检查格式与空间正确性。使用与仓库版本兼容的 Transformers 与 Qwen 处理器；具体输入方式参考官方 Qwen3-VL 示例。[上游推理示例](https://github.com/QwenLM/Qwen3-VL)\n无机器人首个小实验：同一张桌面图，分别问“杯子在盘子的哪一侧？”、“拿取杯子会遇到什么遮挡？”，记录答案、失败例和显存。之后改变颜色／位置／措辞，检验定位与语言理解能否分开评估。\n\n## 优势与优化假设（Strengths and Hypotheses）\n4B 级别适合先探索具身空间推理。官方 16 项基准中七项开源领先是其测试汇总，不代表每个基准都领先；BLINK 列仅平均相对深度与空间关系两个子任务。[基准与脚注](https://huggingface.co/unitreerobotics/UnifoLM-ER-1/blob/dfb321b4317a011ce80622b9305b5dbb6513241b/README.md)\n待测：短输出与图像词元预算对定位质量、延迟的影响；结构化格式验证与坐标校准；以后再测试量化（Quantization），先保留全精度基线，避免把数值变化与提示词变化混在一起。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://huggingface.co/unitreerobotics/UnifoLM-ER-1",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "model:er1",
+        "verified_on": "2026-10-01",
+        "weight_version": "dfb321b4317a011ce80622b9305b5dbb6513241b",
+        "evidence_level": "official+config"
+      }
+    },
+    {
+      "key": "model:flow",
+      "kind": "model",
+      "title": "UnifoLM-ER-Flow",
+      "summary": "ER-1 上融合动态区域掩码词元与离散动作词元的继续训练版本。",
+      "body_md": "# 从 ER-1 到 ER-Flow（From ER-1 to ER-Flow）\n官方将它描述为 ER-1 增加交互中心世界建模（Interaction-centric World Modeling）和离散动作学习（Discrete Action Learning）。模型卡显示为 4B 级别，架构仍属 Qwen3-VL。[模型卡](https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/blob/f6dea62ca3fb42a633723b80d7f4b38b321f010e/README.md)；[架构配置](https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/blob/f6dea62ca3fb42a633723b80d7f4b38b321f010e/config.json)\n\n## 两条表征路径（Two Representation Paths）\n1. 动态区域：用光流（Optical Flow）提取未来场景变化区域；向量量化变分自编码器（Vector-Quantized Variational Autoencoder, VQ-VAE）将其编码为定长离散掩码词元（Mask Tokens）；VLM 根据当前图像与任务／动作条件预测未来变化。\n2. 动作：将动作分成末端位姿、末端关节、下肢关节，各自用残差向量量化（Residual Vector Quantization, RVQ）离散编码；词元按相同时间步对齐后共同学习。\n这是对变化区域的预测，不等于 WMA 的完整 RGB 视频生成。ER-Flow 名称中的 Flow 不应与动作专家的流匹配（Flow Matching）混淆。[两条路径的官方说明](https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/blob/f6dea62ca3fb42a633723b80d7f4b38b321f010e/README.md)\n\n## 如何运行与目前公开边界（Execution and Public Boundary）\n可按 Qwen3-VL 类接口加载权重进行词元生成／表征使用；真正还原动态掩码或物理动作需要对应 VQ-VAE／RVQ 解码器、词表与统计量。当前核对的 HF 文件树与 WLA 代码树未找到完整独立 RVQ／动态区域解码器发布包，不能承诺下载 ER-Flow 权重即可跑通完整演示。先将其作为 WLA 的表征基座使用。[文件树](https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/tree/f6dea62ca3fb42a633723b80d7f4b38b321f010e)；[动作专家训练文档](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/train_action_expert_en.md)\n\n## 优势与待验证优化（Strengths and Testable Improvements）\n紧凑变化表征可以把感知、交互预测与动作语义联系起来。研究假设：动态掩码的学习可能增强动作相关表征，但需同规模、同数据的消融（Ablation）验证，不能把 ER-Flow→WLA 的成功自动归因于光流。重点测码本重建误差（Codebook Reconstruction Error）、小物体接触遗漏、离散／连续动作对齐和跨本体迁移。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "model:flow",
+        "verified_on": "2026-10-01",
+        "weight_version": "f6dea62ca3fb42a633723b80d7f4b38b321f010e",
+        "evidence_level": "official+file-audit"
+      }
+    },
+    {
+      "key": "model:wla",
+      "kind": "model",
+      "title": "UnifoLM-WLA-1.0",
+      "summary": "ER-Flow 表征基座与 MMDiT 连续动作专家，重点读统一空间和本地轨迹评估。",
+      "body_md": "# 基座与规模（Backbone and Scale）\n官方路线为 ER-Flow 多模态基座 + 多模态扩散 Transformer（Multimodal Diffusion Transformer, MMDiT）动作专家。公开介绍称约 6B 参数、约 2500 小时真机数据、64 项任务，包含桌面与全身操作、二指夹爪与五指手；这是官方体系的描述，不代表每条开源接口均已支持所有硬件。[官方项目方法](https://unigen-x.github.io/unifolm-wla.github.io/)\n基座属于 Qwen3-VL 系列，不要因仓库致谢 Qwen-Image 就写成“整套模型以 Qwen-Image 为视觉语言基座”。致谢说明组件来源，权重配置和实际 VLM 加载器决定基座。[VLM 加载器](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/model/modules/vlm/QWen3.py)\n\n## 实现拆解（Implementation Walkthrough）\n多视角图像与语言 → Qwen3-VL 处理；60 维状态与60维掩码拼成120维，机器人状态投影器（Robot State Projector）映射进基座表征；特征与带噪动作送入双流联合注意力（Double-stream Joint Attention）的 MMDiT；流匹配预测速度，经积分生成动作块。[框架](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/model/framework/VLM4A/QwenMMDiT.py)；[MMDiT 结构](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/model/modules/action_model/DiT_modules/mmdit.py)\n动作头的损失按有效自由度掩码计算，无效维度在训练与推理输入中置零；框架还屏蔽助理轮次词元，减少离散目标向连续动作头泄漏。[动作头与掩码](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/model/modules/action_model/MMDiT_ActionHeader.py)；[框架中的助理掩码](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/model/framework/VLM4A/QwenMMDiT.py)\n发布 Base 配置为 54 维动作、30 个时间点、4 步采样；投影器输入120维不表示机器人有120个物理关节。[发布权重配置](https://huggingface.co/unitreerobotics/UnifoLM-WLA-1.0-Base/blob/dedc0612c4a921446db3a8cb0864bb7f7433329e/config.yaml)\n\n## 运行与训练（Execution and Training）\n无机器人首选本地轨迹评估（Local Episode Evaluation）：读数据集、权重配置与统计量，逐动作块预测，反归一化并还原相对位姿，然后对比预测和真实动作。它是离线误差评估，不是闭环成功率。[评估脚本](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/examples/unifolm_wla/eval_files/unitree/eval_local_episode.py)\n随后可以冻结 VLM，仅微调动作专家与状态投影器；当前官方示例为单卡24GB、批量1、梯度累积8。LoRA 也有独立入口，不能保证任意数据、图像尺寸与环境都一定适配4090。[冻结配置](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/config/training/mmdit_finetune_frozen_vlm.yaml)；[LoRA 配置](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/config/training/mmdit_lora_frozen_vlm.yaml)\n当前服务器适配器仅覆盖 Dex1 双指夹爪字段，缺少 WBT 手指与底盘字段；全身服务需要扩展协议，不能仅替换权重。[适配器](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/model_server/unifolm_wla_action_adapter.py)\n\n## 优势与优化方向（Strengths and Optimization Directions）\n统一动作空间与有效性掩码支持不同本体／末端数据共享；表征预训练与动作专家训练可分阶段进行。待验证：不同动作模态损失权重、码本先验对连续控制的价值、冻结／LoRA／全量微调对质量与成本的取舍、少步采样与动作时延鲁棒性、真实闭环中的分布偏移。当前训练框架返回动作损失，不可未经检查就宣称公开微调默认重跑了全部 ER 预训练任务。[实际训练输出](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/model/framework/VLM4A/QwenMMDiT.py)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "model:wla",
+        "verified_on": "2026-10-01",
+        "commit": "0a1aa87be8f775c7883fcd27216e3666ac18a8c5",
+        "weight_version": "dedc0612c4a921446db3a8cb0864bb7f7433329e",
+        "evidence_level": "official+code"
+      }
+    },
+    {
+      "key": "base:dynamic",
+      "kind": "model",
+      "title": "DynamiCrafter（视频扩散先验 / Video Diffusion Prior）",
+      "summary": "图像条件与视频生成先验帮助理解 WMA 的图像编码、潜变量与时序生成。WMA 明确致谢其代码，但当前资料未明确标出唯一原始预训练 checkpoint；保留这个未知项。",
+      "body_md": "图像条件与视频生成先验帮助理解 WMA 的图像编码、潜变量与时序生成。WMA 明确致谢其代码，但当前资料未明确标出唯一原始预训练 checkpoint；保留这个未知项。\n\n[原始来源（Primary Source）](https://arxiv.org/abs/2310.12190)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://arxiv.org/abs/2310.12190",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "base:dynamic",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "base:qwen25",
+      "kind": "model",
+      "title": "Qwen2.5-VL-7B（视觉语言基座 / VLM Backbone）",
+      "summary": "VLA 的官方基座。重点读视觉编码、动态分辨率与多模态位置编码，不需要先学习所有 Qwen 训练细节。",
+      "body_md": "VLA 的官方基座。重点读视觉编码、动态分辨率与多模态位置编码，不需要先学习所有 Qwen 训练细节。\n\n[原始来源（Primary Source）](https://arxiv.org/abs/2502.13923)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://arxiv.org/abs/2502.13923",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "base:qwen25",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "base:qwen3",
+      "kind": "model",
+      "title": "Qwen3-VL-4B（视觉语言基座 / VLM Backbone）",
+      "summary": "ER-1 的官方基座。先理解图像词元、视觉语言特征、生成接口；Qwen 系列的所有能力不能自动视为宇树 checkpoint 已独立验证的能力。",
+      "body_md": "ER-1 的官方基座。先理解图像词元、视觉语言特征、生成接口；Qwen 系列的所有能力不能自动视为宇树 checkpoint 已独立验证的能力。\n\n[原始来源（Primary Source）](https://arxiv.org/abs/2511.21631)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://arxiv.org/abs/2511.21631",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "base:qwen3",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "base:vlm",
+      "kind": "model",
+      "title": "UnifoLM-VLM-Base（空间增强基座 / Spatially Enhanced Backbone）",
+      "summary": "VLA 运行需要的空间增强视觉语言基座。项目称其对应继续预训练后的 UnifoLM-VLM-0；发布名使用 VLM-Base。它与 ER-1 使用不同代 Qwen 主干。",
+      "body_md": "VLA 运行需要的空间增强视觉语言基座。项目称其对应继续预训练后的 UnifoLM-VLM-0；发布名使用 VLM-Base。它与 ER-1 使用不同代 Qwen 主干。\n\n[原始来源（Primary Source）](https://huggingface.co/unitreerobotics/UnifoLM-VLM-Base)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://huggingface.co/unitreerobotics/UnifoLM-VLM-Base",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "base:vlm",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "concept:latent",
+      "kind": "concept",
+      "title": "潜空间视频扩散（Latent Video Diffusion）",
+      "summary": "在图像压缩后的潜变量上迭代去噪，解码为视频；区分像素分辨率、潜变量分辨率和时间帧数。",
+      "body_md": "在图像压缩后的潜变量上迭代去噪，解码为视频；区分像素分辨率、潜变量分辨率和时间帧数。\n\n[定义／实现出处（Definition / Implementation）](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/configs/inference/base_model_inference.yaml)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/configs/inference/base_model_inference.yaml",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "concept:latent",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "concept:policy",
+      "kind": "concept",
+      "title": "扩散动作策略（Diffusion Action Policy）",
+      "summary": "把动作序列看成条件生成问题，迭代去噪可表达多模态动作分布；WMA 的条件 U-Net 是实际动作路径之一。",
+      "body_md": "把动作序列看成条件生成问题，迭代去噪可表达多模态动作分布；WMA 的条件 U-Net 是实际动作路径之一。\n\n[定义／实现出处（Definition / Implementation）](https://arxiv.org/abs/2303.04137)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://arxiv.org/abs/2303.04137",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "concept:policy",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "concept:fm",
+      "kind": "concept",
+      "title": "流匹配（Flow Matching）",
+      "summary": "学习将噪声运送到数据的速度场。当前动作头的线性路径可写作 x_t=(1-t)ε+t·a，目标速度 a-ε；推理积分速度场。此处 t 是生成时间，不是机器人控制时间。",
+      "body_md": "学习将噪声运送到数据的速度场。当前动作头的线性路径可写作 x_t=(1-t)ε+t·a，目标速度 a-ε；推理积分速度场。此处 t 是生成时间，不是机器人控制时间。\n\n[定义／实现出处（Definition / Implementation）](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/model/modules/action_model/DiT_ActionHeader.py)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/model/modules/action_model/DiT_ActionHeader.py",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "concept:fm",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "concept:dit",
+      "kind": "concept",
+      "title": "动作扩散 Transformer（Action DiT）",
+      "summary": "VLA 使用条件 Transformer 预测动作速度；WLA 改用 MMDiT 双流联合注意力。结构家族名不决定噪声目标，必须检查具体损失。",
+      "body_md": "VLA 使用条件 Transformer 预测动作速度；WLA 改用 MMDiT 双流联合注意力。结构家族名不决定噪声目标，必须检查具体损失。\n\n[定义／实现出处（Definition / Implementation）](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/model/modules/action_model/DiT_ActionHeader.py)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/model/modules/action_model/DiT_ActionHeader.py",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "concept:dit",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "concept:mmdit",
+      "kind": "concept",
+      "title": "多模态扩散 Transformer（MMDiT）",
+      "summary": "动作和条件分别处理，通过联合注意力交换信息。WLA 中实际用途是连续动作速度预测；与图像生成结构相关，但不是输出图像的动作专家。",
+      "body_md": "动作和条件分别处理，通过联合注意力交换信息。WLA 中实际用途是连续动作速度预测；与图像生成结构相关，但不是输出图像的动作专家。\n\n[定义／实现出处（Definition / Implementation）](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/model/modules/action_model/DiT_modules/mmdit.py)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/model/modules/action_model/DiT_modules/mmdit.py",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "concept:mmdit",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "concept:flowmask",
+      "kind": "concept",
+      "title": "光流与动态区域预测（Optical Flow and Dynamic-region Prediction）",
+      "summary": "光流用于提取场景变化区域，预测其离散掩码表征；物体外观恒常性和接触微运动可能不被粗掩码充分表达，这是待验证局限。",
+      "body_md": "光流用于提取场景变化区域，预测其离散掩码表征；物体外观恒常性和接触微运动可能不被粗掩码充分表达，这是待验证局限。\n\n[定义／实现出处（Definition / Implementation）](https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/blob/f6dea62ca3fb42a633723b80d7f4b38b321f010e/README.md)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/blob/f6dea62ca3fb42a633723b80d7f4b38b321f010e/README.md",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "concept:flowmask",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "concept:vq",
+      "kind": "concept",
+      "title": "向量量化与残差量化（VQ-VAE and RVQ）",
+      "summary": "VQ-VAE 将连续潜变量映射到码本索引；RVQ 分阶段量化残差。ER-Flow 用前者编码动态区域、后者编码三类动作。完整解码还需要对应码本与解码器。",
+      "body_md": "VQ-VAE 将连续潜变量映射到码本索引；RVQ 分阶段量化残差。ER-Flow 用前者编码动态区域、后者编码三类动作。完整解码还需要对应码本与解码器。\n\n[定义／实现出处（Definition / Implementation）](https://arxiv.org/abs/1711.00937)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://arxiv.org/abs/1711.00937",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "concept:vq",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "concept:chunk",
+      "kind": "concept",
+      "title": "动作分块与反馈（Action Chunking and Feedback）",
+      "summary": "一次预测一段未来动作，执行部分后重新观察。预测块长度、执行步数、控制频率是不同变量；长块可省计算但可能延迟纠错。",
+      "body_md": "一次预测一段未来动作，执行部分后重新观察。预测块长度、执行步数、控制频率是不同变量；长块可省计算但可能延迟纠错。\n\n[定义／实现出处（Definition / Implementation）](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/scripts/run_world_model_interaction.sh)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/scripts/run_world_model_interaction.sh",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "concept:chunk",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "concept:space",
+      "kind": "concept",
+      "title": "统一动作空间与掩码（Unified Action Space and Masks）",
+      "summary": "WLA 统一54维动作、60维状态，不存在的模块用有效性掩码标记；状态+状态掩码投影输入120维。禁止把未使用维度当实际关节。",
+      "body_md": "WLA 统一54维动作、60维状态，不存在的模块用有效性掩码标记；状态+状态掩码投影输入120维。禁止把未使用维度当实际关节。\n\n[定义／实现出处（Definition / Implementation）](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "concept:space",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "concept:se3",
+      "kind": "concept",
+      "title": "相对位姿与旋转表示（Relative Pose, SE(3), Rotation-6D）",
+      "summary": "末端与底盘动作以相对当前状态的刚体变换表示；必须分清参考坐标系、旋转组合次序、米／弧度与6维旋转编码。",
+      "body_md": "末端与底盘动作以相对当前状态的刚体变换表示；必须分清参考坐标系、旋转组合次序、米／弧度与6维旋转编码。\n\n[定义／实现出处（Definition / Implementation）](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "concept:se3",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "concept:norm",
+      "kind": "concept",
+      "title": "归一化与统计量（Normalization and Statistics）",
+      "summary": "WLA 相对位姿默认 Z-score，普通状态／动作默认1%/99%分位数归一化，跨任务统计需按规范合并。VLA 的 unnorm_key 必须匹配 checkpoint 与数据源。",
+      "body_md": "WLA 相对位姿默认 Z-score，普通状态／动作默认1%/99%分位数归一化，跨任务统计需按规范合并。VLA 的 unnorm_key 必须匹配 checkpoint 与数据源。\n\n[定义／实现出处（Definition / Implementation）](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "concept:norm",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "concept:lora",
+      "kind": "concept",
+      "title": "冻结主干与低秩适配（Frozen Backbone and LoRA）",
+      "summary": "冻结 VLM 减少训练开销；LoRA 训练低秩增量。当前 WLA 示例在动作头注入 LoRA，与“对所有 VLM 权重做 LoRA”不是同一设置。",
+      "body_md": "冻结 VLM 减少训练开销；LoRA 训练低秩增量。当前 WLA 示例在动作头注入 LoRA，与“对所有 VLM 权重做 LoRA”不是同一设置。\n\n[定义／实现出处（Definition / Implementation）](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/config/training/mmdit_lora_frozen_vlm.yaml)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/config/training/mmdit_lora_frozen_vlm.yaml",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "concept:lora",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "actions",
+      "kind": "resource",
+      "title": "动作与状态数据字典（Action and State Data Dictionary）",
+      "summary": "把54／60／120维、坐标系、掩码与统计量连接到实际模型输入。",
+      "body_md": "# 先分清数据空间（Separate Data Spaces）\nWLA 的动作向量54维、状态向量60维；120维是状态和掩码拼接后的投影器输入。动作包括双臂末端相对位姿、手部及下身相关模块，缺失模块用掩码表示。默认目标采样率30Hz、动作块30点，约覆盖0到29/30秒。[官方数据处理规范](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md)\n\n## 读一条轨迹的六个问题（Six Questions for an Episode）\n1. 每张相机图像对应哪个角色，图像顺序是否与提示词中的角色一致？\n2. 指令（Instruction）是一段轨迹共享，还是每个时间点不同？\n3. 当前状态（Current State）和未来动作（Future Actions）如何对齐？\n4. 哪些动作维度有效，位姿是绝对还是相对？\n5. 使用哪个统计量文件，恢复物理单位后是否合理？\n6. 预测误差统计是在相对表征还是物理位姿中计算？\n多视角角色顺序、状态掩码拼接与动作掩码传递可以从框架逐字段跟踪。[批次到模型的适配代码](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/model/framework/VLM4A/QwenMMDiT.py)\n\n## 记录模板（Recording Template）\n| 字段（Field） | 形状（Shape） | 单位／坐标系（Units / Frame） | 来源文件（Source） | 检查结果（Check） |\n|---|---|---|---|---|\n| 图像（Images） | 待填 | 相机视角 | 待填 | 待填 |\n| 状态（State） | 待填 | 待填 | 待填 | 待填 |\n| 动作（Actions） | 待填 | 待填 | 待填 | 待填 |\n| 有效性掩码（Validity Masks） | 待填 | 布尔 | 待填 | 待填 |\n\n本表是学习作业模板，尚未冒充已读取真实数据的结果。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "actions",
+        "verified_on": "2026-10-01",
+        "subtype": "documentation"
+      }
+    },
+    {
+      "key": "gaps",
+      "kind": "question",
+      "title": "公开内容与复现缺口（Public Artifacts and Reproduction Gaps）",
+      "summary": "分享时区分正式证据、静态代码观察、官方报告与待实测假设。",
+      "body_md": "# 证据分层（Evidence Levels）\n- 官方方法／结果（Official Claim）：官方主页、模型卡、README，能证明“官方这样报告”，不能代替独立实测。\n- 代码证据（Code Evidence）：固定提交的类、配置与函数；可确认当前实现，不能单凭静态阅读保证安装成功。\n- 本地实验（Local Measurement）：固定版本、输入和种子，保存日志和产物。本组当前还没有模型 GPU 实测。\n- 研究假设（Research Hypothesis）：优化和融合建议，必须有对照实验。\n\n## 已识别的缺口（Identified Gaps）\n1. WMA：原始视频基座的唯一预训练权重来源和充分量化消融尚需进一步确认；代码继承 DynamiCrafter 不等于同名完整权重直接可替换。\n2. VLA：官方脚本存在作者本机绝对路径；动作常量与发布 YAML 在维数／块长度上不一致；当前发布配置的 `QwenFM` 与框架注册名 `unifolm_vla` 也需要实际加载核验。它们是静态兼容性风险，本轮没有伪造运行报错。[发布配置](https://huggingface.co/unitreerobotics/UnifoLM-VLA-Libero/blob/f86b8c27ad4ad046f61de8e10d1388202735d719/config.yaml)；[注册与框架](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/model/framework/unifolm_vla.py)；[平台常量](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/rlds_dataloader/constants.py)\n3. ER-Flow：当前公开文件未找到完整独立 VQ-VAE／RVQ 解码器发布包，暂不能保证离散输出到物理动作的端到端复现。[权重文件树](https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/tree/f6dea62ca3fb42a633723b80d7f4b38b321f010e)\n4. WLA：HF Base 模型卡几乎为空，应以固定版本 GitHub 技术文档、权重配置补齐；当前服务协议 Dex1 专用，并非全身手指／底盘通用。[Base 模型卡](https://huggingface.co/unitreerobotics/UnifoLM-WLA-1.0-Base/blob/dedc0612c4a921446db3a8cb0864bb7f7433329e/README.md)；[服务器适配器](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/model_server/unifolm_wla_action_adapter.py)\n5. 微调数据混合：文档明确当前按样本数量采样，配置里的 `weight` 并未生效；不要将统计量“等任务合并”误当训练采样“等任务权重”。[训练数据说明](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/train_action_expert_en.md)\n\n## 性能比较边界（Performance Comparison Limits）\nER 的空间问答分数、VLA 的 LIBERO 成功率、WMA 的视频预测误差和 WLA 的离线动作误差测量不同能力，不应放在同一排行里。真机视频不能直接给出统计成功率。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/README.md",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "gaps",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "fusion",
+      "kind": "question",
+      "title": "可验证的模型融合方向（Testable Model Integration）",
+      "summary": "区分已经融合的技术、系统组合和待研究的权重融合。",
+      "body_md": "# 已经实现的融合（Implemented Integration）\n- WMA：图文条件 + 视频预测 + 动作扩散头。[配置](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/configs/inference/base_model_inference.yaml)\n- VLA：空间增强 VLM 特征 + 状态 + 流匹配动作头。[框架](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/model/framework/unifolm_vla.py)\n- ER-Flow：视觉、语言、未来动态区域与离散动作共同学习。[模型卡](https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/blob/f6dea62ca3fb42a633723b80d7f4b38b321f010e/README.md)\n- WLA：ER-Flow 基座 + MMDiT 连续动作专家 + 统一动作／状态掩码。[框架](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/model/framework/VLM4A/QwenMMDiT.py)\n\n## 第一组可做的研究假设（Research Hypotheses）\n| 方向 | 如何组合（Integration） | 对照与测量（Control / Measurement） |\n|---|---|---|\n| 世界模型评价动作 | VLA 给候选动作，WMA 预测结果，用明确的目标距离或接触指标排序 | 同一任务比较原策略与重排序；先证明动作／坐标／图像协议一致。不能称为官方现成模块。 |\n| 基座表征比较 | 在相同小数据上比较 ER-1 与 ER-Flow，动作专家结构相同 | 控制训练步数、数据、种子；对比动作误差与推理成本，检验交互预训练增益。 |\n| 轻量动作适配 | 冻结主干，对动作头做 LoRA 与全量头微调对照 | 峰值显存、延迟、误差和失败类型；利用官方现有微调入口。 |\n\n权重融合（Weight Merging）要求架构、参数形状与语义兼容，不能把 Qwen2.5-VL 与 Qwen3-VL 或视频 U-Net 直接相加。先做接口对齐或特征蒸馏（Feature Distillation），后者仍需实际训练验证。这些是本组提出的研究方向，不是宇树已经发布的性能结论。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/model/framework/VLM4A/QwenMMDiT.py",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "fusion",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "runbook",
+      "kind": "resource",
+      "title": "4090 离线复现路线与资源预算（Offline Runbook and Budget）",
+      "summary": "先小型ER推理，再WMA视频，最后WLA本地轨迹；环境分别隔离。",
+      "body_md": "# 环境隔离（Environment Isolation）\n你目前使用 Windows、RTX4090，先保持工作台 Python 环境独立。依据官方 Bash、FlashAttention 与数据依赖，建议模型实验采用 Linux／WSL2 独立环境；这是部署建议，不是本轮已完成安装。[NVIDIA WSL2 指南](https://docs.nvidia.com/cuda/wsl-user-guide/index.html)\n| 项目 | 当前官方依赖（Pinned Dependencies） |\n|---|---|\n| WMA | Python严格3.10.18，PyTorch2.3.1，Transformers4.40.1 |\n| VLA | README建议Python3.10.18／CUDA12.4；依赖PyTorch2.5.1／Transformers4.52.3 |\n| WLA | Python>=3.12,<3.14，PyTorch2.8.0，Transformers5.5.3，uv管理 |\n出处：[WMA依赖](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/pyproject.toml)、[VLA依赖](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/pyproject.toml)、[WLA依赖](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/pyproject.toml)。不要把这三套依赖混装，也不要以最新版覆盖固定版本后称为原始复现。\n\n## 执行次序（Execution Order）\n1. 环境盘点：WSL版本、驱动、可用显存、磁盘；记录到实验配置。\n2. ER-1：只取一张小图、短输出，检查模型与处理器兼容，然后测显存／延迟。\n3. WMA Base：先基础视频脚本的一个提示，保留默认16帧与16步；Dual交互脚本默认50步且一轮有两次生成，不能拿两者总耗时直接比较。[基础脚本](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/scripts/run_base_model_inference.sh)、[交互脚本](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/scripts/run_world_model_interaction.sh)\n4. WLA Base：只取 Dex1 一项数据、一条轨迹，从官方离线评估入口比较预测和真实动作；确认54维掩码与统计量。[评估入口](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/examples/unifolm_wla/eval_files/unitree/eval_local_episode.py)\n5. VLA LIBERO：先检查常量／权重兼容，再一次仿真试验；之后才扩大任务数和尝试微调。\n\n## WLA 离线命令示意（Offline Command Example）\n下面是后续 Linux 环境中的官方入口形式，需先完成权重／单任务数据下载、路径及数据配置；本轮尚未执行。\n```bash\npython -m examples.unifolm_wla.eval_files.unitree.eval_local_episode \\\n  --ckpt_path /path/UnifoLM-WLA-1.0-Base/checkpoints/model.safetensors \\\n  --data_config_path unifolm_wla/dataloader/multi_source_dataset/configs/unitree.yaml \\\n  --episode_idx 0 --save_dir results/episode_0\n```\n命令出处：[官方评估文档](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/train_action_expert_en.md)。大数据集先按任务选择，再决定是否完整下载。\n\n## 资源记录规则（Resource Accounting）\n“权重文件体积”是磁盘下载量，既不等于GPU显存，也不包括激活、缓存、优化器和数据。另见自动生成的权重预算表；4090可行性目前是待实测。ER约4B、WLA约6B的BF16权重理论量级分别约8GB／12GB，只能作为初估；实际峰值显存必须记录。\n\n## 实验最小记录（Minimum Experiment Record）\ncommit、权重revision、输入文件哈希、动作统计量、种子、精度、分辨率／词元数、动作块、采样步数、预热次数、重复次数、加载耗时、稳定推理耗时、峰值显存、输出路径、失败日志。加载、预热与稳定推理时间分开统计。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/train_action_expert_en.md",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "runbook",
+        "verified_on": "2026-10-01",
+        "subtype": "documentation"
+      }
+    },
+    {
+      "key": "talk",
+      "kind": "task",
+      "title": "分享提纲与证据清单（Talk Outline and Evidence Checklist）",
+      "summary": "按照问题、结构、代码与实验讲解，不把官方宣传当成本机结果。",
+      "body_md": "# 暂定分享结构（Provisional Talk Structure）\n暂按算法同学20–30分钟组织，待你补充听众／时长后调整。\n1. 问题（Problem）：机器人为什么需要理解、预测与动作三个层次？用五模型输入／输出表说明。\n2. 两条路线（Two Routes）：WMA的视频预测和VLA的图文表征；明确相似目标不意味着同一基座。\n3. 新路线（New Pipeline）：Qwen3-VL→ER-1→ER-Flow→MMDiT动作专家，解释光流、掩码词元、离散动作与连续动作的作用。\n4. 代码落点（Code Anchors）：选一条WLA数据流讲54／60／120维、掩码、归一化和动作积分。\n5. 实测（Measurements）：展示单图ER、视频WMA或单轨迹WLA的实际产物；未完成时明确标待验证。\n6. 研究问题（Research Questions）：交互表征带来多少增益？少步采样如何影响动作？全身协议还缺哪些字段？\n\n## 逐页证据检查（Slide-by-slide Evidence Check）\n- 数字写“官方报告（Officially Reported）”或“本机实测（Locally Measured）”。\n- 每张结构图注明简化图（Simplified Diagram），来源链接指向模型卡／代码，而非没有读过的二手文章。\n- 基准可比性、开源时间和代码版本必须写清。\n- 优化方向标研究假设（Research Hypothesis），避免承诺已验证提升。\n\n通过条件：至少一个完整输入→模型→输出案例、五个模型的区分、三个带来源的关键论点、两个研究问题。幻灯片尚未制作。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/README.md",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "talk",
+        "verified_on": "2026-10-01",
+        "acceptance": "形成有引用的讲解提纲，并包含一项真实离线结果或明确的未完成标记。"
+      }
+    },
+    {
+      "key": "paper:dynamic",
+      "kind": "resource",
+      "title": "论文：动态图像生成（DynamiCrafter）",
+      "summary": "读图像条件如何接入视频扩散；将其与WMA配置中的图像重采样器和视频潜变量对应。",
+      "body_md": "读图像条件如何接入视频扩散；将其与WMA配置中的图像重采样器和视频潜变量对应。\n\n[论文原文入口（Original Paper）](https://arxiv.org/abs/2310.12190)\n\n阅读状态：仅核对摘要与出处，尚未逐节精读；这是上游论文，不是宇树模型的独立论文。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://arxiv.org/abs/2310.12190",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "paper:dynamic",
+        "verified_on": "2026-10-01",
+        "subtype": "paper",
+        "arxiv": "2310.12190"
+      }
+    },
+    {
+      "key": "paper:dp",
+      "kind": "resource",
+      "title": "论文：扩散动作策略（Diffusion Policy）",
+      "summary": "读动作序列生成和滚动执行；理解生成动作块与执行前缀的区别。",
+      "body_md": "读动作序列生成和滚动执行；理解生成动作块与执行前缀的区别。\n\n[论文原文入口（Original Paper）](https://arxiv.org/abs/2303.04137)\n\n阅读状态：仅核对摘要与出处，尚未逐节精读；这是上游论文，不是宇树模型的独立论文。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://arxiv.org/abs/2303.04137",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "paper:dp",
+        "verified_on": "2026-10-01",
+        "subtype": "paper",
+        "arxiv": "2303.04137"
+      }
+    },
+    {
+      "key": "paper:fm",
+      "kind": "resource",
+      "title": "论文：生成模型的流匹配（Flow Matching for Generative Modeling）",
+      "summary": "先读概率路径和速度回归，不必首轮通读所有证明；对应动作头的线性插值。",
+      "body_md": "先读概率路径和速度回归，不必首轮通读所有证明；对应动作头的线性插值。\n\n[论文原文入口（Original Paper）](https://arxiv.org/abs/2210.02747)\n\n阅读状态：仅核对摘要与出处，尚未逐节精读；这是上游论文，不是宇树模型的独立论文。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://arxiv.org/abs/2210.02747",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "paper:fm",
+        "verified_on": "2026-10-01",
+        "subtype": "paper",
+        "arxiv": "2210.02747"
+      }
+    },
+    {
+      "key": "paper:vq",
+      "kind": "resource",
+      "title": "论文：离散表征学习（Neural Discrete Representation Learning）",
+      "summary": "先理解码本、最近邻量化与解码；这不是ER-Flow完整RVQ训练配方。",
+      "body_md": "先理解码本、最近邻量化与解码；这不是ER-Flow完整RVQ训练配方。\n\n[论文原文入口（Original Paper）](https://arxiv.org/abs/1711.00937)\n\n阅读状态：仅核对摘要与出处，尚未逐节精读；这是上游论文，不是宇树模型的独立论文。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://arxiv.org/abs/1711.00937",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "paper:vq",
+        "verified_on": "2026-10-01",
+        "subtype": "paper",
+        "arxiv": "1711.00937"
+      }
+    },
+    {
+      "key": "paper:mmdit",
+      "kind": "resource",
+      "title": "论文：整流流Transformer（Scaling Rectified Flow Transformers）",
+      "summary": "作为MMDiT结构背景阅读；不要把其图像生成结果当成WLA机器人性能证据。",
+      "body_md": "作为MMDiT结构背景阅读；不要把其图像生成结果当成WLA机器人性能证据。\n\n[论文原文入口（Original Paper）](https://arxiv.org/abs/2403.03206)\n\n阅读状态：仅核对摘要与出处，尚未逐节精读；这是上游论文，不是宇树模型的独立论文。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://arxiv.org/abs/2403.03206",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "paper:mmdit",
+        "verified_on": "2026-10-01",
+        "subtype": "paper",
+        "arxiv": "2403.03206"
+      }
+    },
+    {
+      "key": "paper:q25",
+      "kind": "resource",
+      "title": "论文：Qwen2.5-VL技术报告（Technical Report）",
+      "summary": "理解VLA的视觉语言主干，先读结构与动态分辨率部分。",
+      "body_md": "理解VLA的视觉语言主干，先读结构与动态分辨率部分。\n\n[论文原文入口（Original Paper）](https://arxiv.org/abs/2502.13923)\n\n阅读状态：仅核对摘要与出处，尚未逐节精读；这是上游论文，不是宇树模型的独立论文。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://arxiv.org/abs/2502.13923",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "paper:q25",
+        "verified_on": "2026-10-01",
+        "subtype": "paper",
+        "arxiv": "2502.13923"
+      }
+    },
+    {
+      "key": "paper:q3",
+      "kind": "resource",
+      "title": "论文：Qwen3-VL技术报告（Technical Report）",
+      "summary": "理解ER系列的上游多模态主干；先读视觉语言对齐与多图处理。",
+      "body_md": "理解ER系列的上游多模态主干；先读视觉语言对齐与多图处理。\n\n[论文原文入口（Original Paper）](https://arxiv.org/abs/2511.21631)\n\n阅读状态：仅核对摘要与出处，尚未逐节精读；这是上游论文，不是宇树模型的独立论文。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://arxiv.org/abs/2511.21631",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "paper:q3",
+        "verified_on": "2026-10-01",
+        "subtype": "paper",
+        "arxiv": "2511.21631"
+      }
+    },
+    {
+      "key": "repo:wma",
+      "kind": "repository",
+      "title": "官方代码：unifolm-world-model-action（Official Repository）",
+      "summary": "固定提交用于结构与运行入口核对；目前只保存文本快照，没有安装模型环境。",
+      "body_md": "代码提交（Commit）：`3e198de68de55f93f24b3ad623dd499390aaee45`。\n\n[固定版本README（Pinned README）](https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/README.md)\n\n本地文本快照位于 `research/unitree-group-01/sources/`；这些是研究资料，不是可执行的完整clone。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-world-model-action",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "repo:wma",
+        "verified_on": "2026-10-01",
+        "commit": "3e198de68de55f93f24b3ad623dd499390aaee45"
+      }
+    },
+    {
+      "key": "repo:vla",
+      "kind": "repository",
+      "title": "官方代码：unifolm-vla（Official Repository）",
+      "summary": "固定提交用于结构与运行入口核对；目前只保存文本快照，没有安装模型环境。",
+      "body_md": "代码提交（Commit）：`ff6c39aeb0454cfb95418c66aef40ca777f935c1`。\n\n[固定版本README（Pinned README）](https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/README.md)\n\n本地文本快照位于 `research/unitree-group-01/sources/`；这些是研究资料，不是可执行的完整clone。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-vla",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "repo:vla",
+        "verified_on": "2026-10-01",
+        "commit": "ff6c39aeb0454cfb95418c66aef40ca777f935c1"
+      }
+    },
+    {
+      "key": "repo:wla",
+      "kind": "repository",
+      "title": "官方代码：unifolm-wla（Official Repository）",
+      "summary": "固定提交用于结构与运行入口核对；目前只保存文本快照，没有安装模型环境。",
+      "body_md": "代码提交（Commit）：`0a1aa87be8f775c7883fcd27216e3666ac18a8c5`。\n\n[固定版本README（Pinned README）](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/README.md)\n\n本地文本快照位于 `research/unitree-group-01/sources/`；这些是研究资料，不是可执行的完整clone。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "repo:wla",
+        "verified_on": "2026-10-01",
+        "commit": "0a1aa87be8f775c7883fcd27216e3666ac18a8c5"
+      }
+    },
+    {
+      "key": "src:wma",
+      "kind": "resource",
+      "title": "资料：WMA官方项目页（Official Project Page）",
+      "summary": "用于确认两种模式与官方演示边界。",
+      "body_md": "用于确认两种模式与官方演示边界。\n\n[原始来源（Primary Source）](https://unigen-x.github.io/unifolm-world-model-action.github.io/)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://unigen-x.github.io/unifolm-world-model-action.github.io/",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "src:wma",
+        "verified_on": "2026-10-01",
+        "subtype": "documentation"
+      }
+    },
+    {
+      "key": "src:vla",
+      "kind": "resource",
+      "title": "资料：VLA官方项目页（Official Project Page）",
+      "summary": "用于确认基座、预训练信号与官方LIBERO表；性能不是本机复现值。",
+      "body_md": "用于确认基座、预训练信号与官方LIBERO表；性能不是本机复现值。\n\n[原始来源（Primary Source）](https://unigen-x.github.io/unifolm-vla.github.io/)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://unigen-x.github.io/unifolm-vla.github.io/",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "src:vla",
+        "verified_on": "2026-10-01",
+        "subtype": "documentation"
+      }
+    },
+    {
+      "key": "src:wla",
+      "kind": "resource",
+      "title": "资料：WLA官方项目页（Official Project Page）",
+      "summary": "用于确认ER-1、ER-Flow与WLA的阶段关系。",
+      "body_md": "用于确认ER-1、ER-Flow与WLA的阶段关系。\n\n[原始来源（Primary Source）](https://unigen-x.github.io/unifolm-wla.github.io/)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://unigen-x.github.io/unifolm-wla.github.io/",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "src:wla",
+        "verified_on": "2026-10-01",
+        "subtype": "documentation"
+      }
+    },
+    {
+      "key": "src:er1",
+      "kind": "resource",
+      "title": "模型卡：ER-1（Model Card）",
+      "summary": "用于核对Qwen3-VL-4B、空间训练任务及基准脚注。",
+      "body_md": "用于核对Qwen3-VL-4B、空间训练任务及基准脚注。\n\n[原始来源（Primary Source）](https://huggingface.co/unitreerobotics/UnifoLM-ER-1/blob/dfb321b4317a011ce80622b9305b5dbb6513241b/README.md)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://huggingface.co/unitreerobotics/UnifoLM-ER-1/blob/dfb321b4317a011ce80622b9305b5dbb6513241b/README.md",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "src:er1",
+        "verified_on": "2026-10-01",
+        "subtype": "documentation"
+      }
+    },
+    {
+      "key": "src:flow",
+      "kind": "resource",
+      "title": "模型卡：ER-Flow（Model Card）",
+      "summary": "用于核对动态区域VQ-VAE与三类RVQ动作编码。",
+      "body_md": "用于核对动态区域VQ-VAE与三类RVQ动作编码。\n\n[原始来源（Primary Source）](https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/blob/f6dea62ca3fb42a633723b80d7f4b38b321f010e/README.md)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/blob/f6dea62ca3fb42a633723b80d7f4b38b321f010e/README.md",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "src:flow",
+        "verified_on": "2026-10-01",
+        "subtype": "documentation"
+      }
+    },
+    {
+      "key": "src:action",
+      "kind": "resource",
+      "title": "文档：统一动作状态处理（Action / State Specification）",
+      "summary": "逐项查坐标系、掩码、相对位姿和归一化。",
+      "body_md": "逐项查坐标系、掩码、相对位姿和归一化。\n\n[原始来源（Primary Source）](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "src:action",
+        "verified_on": "2026-10-01",
+        "subtype": "documentation"
+      }
+    },
+    {
+      "key": "src:train",
+      "kind": "resource",
+      "title": "文档：动作专家训练与评估（Action Expert Guide）",
+      "summary": "用于离线评估、冻结主干微调、LoRA及服务接口。",
+      "body_md": "用于离线评估、冻结主干微调、LoRA及服务接口。\n\n[原始来源（Primary Source）](https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/train_action_expert_en.md)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/train_action_expert_en.md",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "src:train",
+        "verified_on": "2026-10-01",
+        "subtype": "documentation"
+      }
+    },
+    {
+      "key": "src:budget",
+      "kind": "resource",
+      "title": "文档：CUDA与WSL2（CUDA on WSL2）",
+      "summary": "用于后续Windows主机GPU实验环境选择；本轮没有安装WSL。",
+      "body_md": "用于后续Windows主机GPU实验环境选择；本轮没有安装WSL。\n\n[原始来源（Primary Source）](https://docs.nvidia.com/cuda/wsl-user-guide/index.html)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://docs.nvidia.com/cuda/wsl-user-guide/index.html",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "src:budget",
+        "verified_on": "2026-10-01",
+        "subtype": "documentation"
+      }
+    },
+    {
+      "key": "benchmark:libero",
+      "kind": "benchmark",
+      "title": "LIBERO（终身机器人学习基准 / Lifelong Robot Learning Benchmark）",
+      "summary": "VLA无机器人闭环仿真入口；单轨迹离线误差不能代替闭环成功率。",
+      "body_md": "先用一个任务一次试验验证输入、动作和环境接口，再扩大多任务评估。记录任务组、试验数和重置／动作语义。\n\n[官方LIBERO仓库](https://github.com/Lifelong-Robot-Learning/LIBERO)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/Lifelong-Robot-Learning/LIBERO",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "benchmark:libero",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "data:oxe",
+      "kind": "dataset",
+      "title": "Open-X Embodiment（跨本体数据 / Cross-embodiment Data）",
+      "summary": "WMA基础模型适配的官方数据来源。",
+      "body_md": "不同本体具有不同传感器、动作和状态语义；不要认为能拼接数组就能联合训练。\n\n[Open-X官方仓库](https://github.com/google-deepmind/open_x_embodiment)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://github.com/google-deepmind/open_x_embodiment",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "data:oxe",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "data:dex1",
+      "kind": "dataset",
+      "title": "宇树Dex1数据（Unitree Dex1 Dataset）",
+      "summary": "WLA初始离线评估优先选择一项双指夹爪任务。",
+      "body_md": "先核对单任务的目录、相机角色和统计量；本轮仅登记官方数据来源，没有下载数据集。\n\n[官方数据合集](https://huggingface.co/collections/unitreerobotics/unifolm-g1-dex1-dataset)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://huggingface.co/collections/unitreerobotics/unifolm-g1-dex1-dataset",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "data:dex1",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "data:wbt",
+      "kind": "dataset",
+      "title": "宇树全身遥操作数据（Whole-body Teleoperation, WBT）",
+      "summary": "包含全身／手部相关字段，需要完整协议与有效性掩码。",
+      "body_md": "与Dex1的动作模块不同，后续先做数据字段比较，再考虑全身服务。\n\n[官方WBT数据合集](https://huggingface.co/collections/unitreerobotics/unifolm-wbt-dataset)\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "https://huggingface.co/collections/unitreerobotics/unifolm-wbt-dataset",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "data:wbt",
+        "verified_on": "2026-10-01"
+      }
+    },
+    {
+      "key": "task:01",
+      "kind": "task",
+      "title": "任务01：五模型输入输出对照（Input / Output Comparison）",
+      "summary": "不运行GPU，先填五行表。",
+      "body_md": "分别写当前观测、指令、状态、未来动作／视频／词元；说明ER-1为什么不是完整控制策略；每行至少一项官方出处。\n\n完成条件（Completion Gate）：每个模型一行输入输出表，能用自己的话说明五种用途。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "task:01",
+        "verified_on": "2026-10-01",
+        "acceptance": "每个模型一行输入输出表，能用自己的话说明五种用途。"
+      }
+    },
+    {
+      "key": "task:02",
+      "kind": "task",
+      "title": "任务02：数据与维度走查（Data / Dimension Walkthrough）",
+      "summary": "解释54、60、120维与相对位姿。",
+      "body_md": "选WLA数据规范，填写数据字典；随后核对VLA常量与配置差异，列出需要运行验证的项。\n\n完成条件（Completion Gate）：完成字段形状、单位、参考坐标系、掩码和统计量表。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "task:02",
+        "verified_on": "2026-10-01",
+        "acceptance": "完成字段形状、单位、参考坐标系、掩码和统计量表。"
+      }
+    },
+    {
+      "key": "task:03",
+      "kind": "task",
+      "title": "任务03：WMA双模式走查（Dual-mode Walkthrough）",
+      "summary": "追踪一次决策→仿真→预测观测回填。",
+      "body_md": "对比基础视频入口和交互入口；标明真实观测与预测观测边界，以及每轮生成次数。\n\n完成条件（Completion Gate）：能画出双模式循环，并注明每次调用的输入与输出。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "task:03",
+        "verified_on": "2026-10-01",
+        "acceptance": "能画出双模式循环，并注明每次调用的输入与输出。"
+      }
+    },
+    {
+      "key": "task:04",
+      "kind": "task",
+      "title": "任务04：VLA与WLA动作头（Action-head Comparison）",
+      "summary": "找到噪声、插值、速度目标、采样积分。",
+      "body_md": "分别读取两个动作头与框架，解释DiT／MMDiT、状态注入与掩码；填写最小公式。\n\n完成条件（Completion Gate）：两张调用图、一条训练损失解释与两项结构差异。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "task:04",
+        "verified_on": "2026-10-01",
+        "acceptance": "两张调用图、一条训练损失解释与两项结构差异。"
+      }
+    },
+    {
+      "key": "task:05",
+      "kind": "task",
+      "title": "任务05：4090最小离线实验（Minimal Offline Experiments）",
+      "summary": "先单图ER，再单视频WMA，再单轨迹WLA。",
+      "body_md": "按运行路线依次执行，记录版本、配置、显存、耗时和失败；通过前一项完成条件后推进下一项，不设固定周时间。\n\n完成条件（Completion Gate）：至少一项真实产物和完整实验记录，未完成项保持待运行。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "task:05",
+        "verified_on": "2026-10-01",
+        "acceptance": "至少一项真实产物和完整实验记录，未完成项保持待运行。"
+      }
+    },
+    {
+      "key": "task:06",
+      "kind": "task",
+      "title": "任务06：完成有证据的分享（Evidence-backed Talk）",
+      "summary": "将架构、代码观察和实测结果组织成讲解。",
+      "body_md": "使用分享提纲，逐页检查来源、结果类型、开源日期与待验证问题。\n\n完成条件（Completion Gate）：逐页来源清单、明确的实验状态与两项研究问题。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "task:06",
+        "verified_on": "2026-10-01",
+        "acceptance": "逐页来源清单、明确的实验状态与两项研究问题。"
+      }
+    },
+    {
+      "key": "exp:er",
+      "kind": "experiment",
+      "title": "实验：ER-1单图空间问答（Single-image Spatial QA）",
+      "summary": "固定图像与模型，比较位置／遮挡问法，并记录显存与延迟。",
+      "body_md": "状态（Status）：待运行（Planned）。\n\n假设（Hypothesis）：固定图像与模型，比较位置／遮挡问法，并记录显存与延迟。\n\n尚未下载权重、安装模型依赖或执行GPU推理；不要把资料核对填写为实验成功。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "exp:er",
+        "verified_on": "2026-10-01",
+        "acceptance": "保存输入、配置、版本、输出和资源测量。"
+      }
+    },
+    {
+      "key": "exp:wma",
+      "kind": "experiment",
+      "title": "实验：WMA单段视频与动作敏感性（Video / Action Sensitivity）",
+      "summary": "固定提示与种子，先获得基础视频，再检查输入动作变化是否改变合理的交互预测。",
+      "body_md": "状态（Status）：待运行（Planned）。\n\n假设（Hypothesis）：固定提示与种子，先获得基础视频，再检查输入动作变化是否改变合理的交互预测。\n\n尚未下载权重、安装模型依赖或执行GPU推理；不要把资料核对填写为实验成功。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "exp:wma",
+        "verified_on": "2026-10-01",
+        "acceptance": "保存输入、配置、版本、输出和资源测量。"
+      }
+    },
+    {
+      "key": "exp:wla",
+      "kind": "experiment",
+      "title": "实验：WLA单轨迹动作评估（Local Episode Action Evaluation）",
+      "summary": "按有效维度比较预测与真实动作，分清离线误差和闭环成功率。",
+      "body_md": "状态（Status）：待运行（Planned）。\n\n假设（Hypothesis）：按有效维度比较预测与真实动作，分清离线误差和闭环成功率。\n\n尚未下载权重、安装模型依赖或执行GPU推理；不要把资料核对填写为实验成功。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "exp:wla",
+        "verified_on": "2026-10-01",
+        "acceptance": "保存输入、配置、版本、输出和资源测量。"
+      }
+    },
+    {
+      "key": "budget",
+      "kind": "resource",
+      "title": "权重下载预算（Weight Download Budget）",
+      "summary": "官方权重磁盘体积与显存需求分开；避免一次下载全部模型。",
+      "body_md": "# 官方权重文件预算（Official Weight File Budget）\n\n| 模型（Model） | 权重合计（GiB） | 类型（Format） | 固定版本（Revision） |\n|---|---:|---|---|\n| UnifoLM-ER-1 | 8.27 | .safetensors | [dfb321b4317a](https://huggingface.co/unitreerobotics/UnifoLM-ER-1/tree/dfb321b4317a011ce80622b9305b5dbb6513241b) |\n| UnifoLM-ER-Flow | 9.01 | .safetensors | [f6dea62ca3fb](https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/tree/f6dea62ca3fb42a633723b80d7f4b38b321f010e) |\n| UnifoLM-VLA-Base | 17.68 | .pt | [06fee5014922](https://huggingface.co/unitreerobotics/UnifoLM-VLA-Base/tree/06fee5014922ba6791cfe48d1e4aefac995dd8a2) |\n| UnifoLM-VLA-Libero | 17.68 | .pt | [f86b8c27ad4a](https://huggingface.co/unitreerobotics/UnifoLM-VLA-Libero/tree/f86b8c27ad4ad046f61de8e10d1388202735d719) |\n| UnifoLM-VLM-Base | 15.45 | .safetensors | [da121034eb56](https://huggingface.co/unitreerobotics/UnifoLM-VLM-Base/tree/da121034eb5681c085a17001853a0267632a796f) |\n| UnifoLM-WLA-1.0-Base | 11.60 | .safetensors | [dedc0612c4a9](https://huggingface.co/unitreerobotics/UnifoLM-WLA-1.0-Base/tree/dedc0612c4a921446db3a8cb0864bb7f7433329e) |\n| UnifoLM-WMA-0-Base | 9.72 | .ckpt | [b7bb75323e8c](https://huggingface.co/unitreerobotics/UnifoLM-WMA-0-Base/tree/b7bb75323e8c614fb9b0d25905d07a0fc11e1793) |\n| UnifoLM-WMA-0-Dual | 15.57 | .ckpt | [88e73c19d72b](https://huggingface.co/unitreerobotics/UnifoLM-WMA-0-Dual/tree/88e73c19d72bead94da3d7fc2433ade6d468167c) |\n\n这是模型仓库内权重文件的磁盘合计，不是运行显存，不能用它判断4090一定能运行。VLA官方推理还读取VLM目录，磁盘需同时考虑两个发布包；模型加载过程中可能额外占用CPU内存。数据、环境和下载缓存另计。\n本轮仅下载约1MB级文本资料，没有下载上表权重。\n\n核对日期（Verified on）：2026-10-01。官方结果与本地实测分开记录；阅读状态不代表你已掌握。\n",
+      "source_url": "",
+      "reading_status": "unread",
+      "mastery_status": "unknown",
+      "tags": [
+        "宇树（Unitree）",
+        "第一组研究（Study Group 01）"
+      ],
+      "metadata": {
+        "research_group": "unitree-group-01",
+        "research_key": "budget",
+        "verified_on": "2026-10-01",
+        "subtype": "documentation"
+      }
+    }
+  ],
+  "relations": [
+    {
+      "source_key": "src:wma",
+      "target_key": "model:wma",
+      "relation_type": "supports",
+      "description": "这份官方资料支持对应模型或运行路线的说明。",
+      "evidence": [
+        {
+          "source_url": "https://unigen-x.github.io/unifolm-world-model-action.github.io/",
+          "locator": "",
+          "explanation": "这份官方资料支持对应模型或运行路线的说明。"
+        }
+      ]
+    },
+    {
+      "source_key": "src:vla",
+      "target_key": "model:vla",
+      "relation_type": "supports",
+      "description": "这份官方资料支持对应模型或运行路线的说明。",
+      "evidence": [
+        {
+          "source_url": "https://unigen-x.github.io/unifolm-vla.github.io/",
+          "locator": "",
+          "explanation": "这份官方资料支持对应模型或运行路线的说明。"
+        }
+      ]
+    },
+    {
+      "source_key": "src:wla",
+      "target_key": "model:wla",
+      "relation_type": "supports",
+      "description": "这份官方资料支持对应模型或运行路线的说明。",
+      "evidence": [
+        {
+          "source_url": "https://unigen-x.github.io/unifolm-wla.github.io/",
+          "locator": "",
+          "explanation": "这份官方资料支持对应模型或运行路线的说明。"
+        }
+      ]
+    },
+    {
+      "source_key": "src:er1",
+      "target_key": "model:er1",
+      "relation_type": "supports",
+      "description": "这份官方资料支持对应模型或运行路线的说明。",
+      "evidence": [
+        {
+          "source_url": "https://huggingface.co/unitreerobotics/UnifoLM-ER-1/blob/dfb321b4317a011ce80622b9305b5dbb6513241b/README.md",
+          "locator": "",
+          "explanation": "这份官方资料支持对应模型或运行路线的说明。"
+        }
+      ]
+    },
+    {
+      "source_key": "src:flow",
+      "target_key": "model:flow",
+      "relation_type": "supports",
+      "description": "这份官方资料支持对应模型或运行路线的说明。",
+      "evidence": [
+        {
+          "source_url": "https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/blob/f6dea62ca3fb42a633723b80d7f4b38b321f010e/README.md",
+          "locator": "",
+          "explanation": "这份官方资料支持对应模型或运行路线的说明。"
+        }
+      ]
+    },
+    {
+      "source_key": "src:action",
+      "target_key": "model:wla",
+      "relation_type": "supports",
+      "description": "这份官方资料支持对应模型或运行路线的说明。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md",
+          "locator": "",
+          "explanation": "这份官方资料支持对应模型或运行路线的说明。"
+        }
+      ]
+    },
+    {
+      "source_key": "src:train",
+      "target_key": "model:wla",
+      "relation_type": "supports",
+      "description": "这份官方资料支持对应模型或运行路线的说明。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/train_action_expert_en.md",
+          "locator": "",
+          "explanation": "这份官方资料支持对应模型或运行路线的说明。"
+        }
+      ]
+    },
+    {
+      "source_key": "src:budget",
+      "target_key": "runbook",
+      "relation_type": "supports",
+      "description": "这份官方资料支持对应模型或运行路线的说明。",
+      "evidence": [
+        {
+          "source_url": "https://docs.nvidia.com/cuda/wsl-user-guide/index.html",
+          "locator": "",
+          "explanation": "这份官方资料支持对应模型或运行路线的说明。"
+        }
+      ]
+    },
+    {
+      "source_key": "task:01",
+      "target_key": "comparison",
+      "relation_type": "uses",
+      "description": "任务使用这份笔记或概念完成学习。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "task:01",
+      "relation_type": "related_to",
+      "description": "第一组研究按完成条件推进的子任务。",
+      "evidence": []
+    },
+    {
+      "source_key": "task:02",
+      "target_key": "actions",
+      "relation_type": "uses",
+      "description": "任务使用这份笔记或概念完成学习。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "task:02",
+      "relation_type": "related_to",
+      "description": "第一组研究按完成条件推进的子任务。",
+      "evidence": []
+    },
+    {
+      "source_key": "task:03",
+      "target_key": "model:wma",
+      "relation_type": "uses",
+      "description": "任务使用这份笔记或概念完成学习。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "task:03",
+      "relation_type": "related_to",
+      "description": "第一组研究按完成条件推进的子任务。",
+      "evidence": []
+    },
+    {
+      "source_key": "task:04",
+      "target_key": "concept:fm",
+      "relation_type": "uses",
+      "description": "任务使用这份笔记或概念完成学习。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "task:04",
+      "relation_type": "related_to",
+      "description": "第一组研究按完成条件推进的子任务。",
+      "evidence": []
+    },
+    {
+      "source_key": "task:05",
+      "target_key": "runbook",
+      "relation_type": "uses",
+      "description": "任务使用这份笔记或概念完成学习。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "task:05",
+      "relation_type": "related_to",
+      "description": "第一组研究按完成条件推进的子任务。",
+      "evidence": []
+    },
+    {
+      "source_key": "task:06",
+      "target_key": "talk",
+      "relation_type": "uses",
+      "description": "任务使用这份笔记或概念完成学习。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "task:06",
+      "relation_type": "related_to",
+      "description": "第一组研究按完成条件推进的子任务。",
+      "evidence": []
+    },
+    {
+      "source_key": "task:02",
+      "target_key": "task:01",
+      "relation_type": "depends_on",
+      "description": "建议先通过前一任务的完成条件，再推进此任务。",
+      "evidence": []
+    },
+    {
+      "source_key": "task:03",
+      "target_key": "task:02",
+      "relation_type": "depends_on",
+      "description": "建议先通过前一任务的完成条件，再推进此任务。",
+      "evidence": []
+    },
+    {
+      "source_key": "task:04",
+      "target_key": "task:03",
+      "relation_type": "depends_on",
+      "description": "建议先通过前一任务的完成条件，再推进此任务。",
+      "evidence": []
+    },
+    {
+      "source_key": "task:05",
+      "target_key": "task:04",
+      "relation_type": "depends_on",
+      "description": "建议先通过前一任务的完成条件，再推进此任务。",
+      "evidence": []
+    },
+    {
+      "source_key": "task:06",
+      "target_key": "task:05",
+      "relation_type": "depends_on",
+      "description": "建议先通过前一任务的完成条件，再推进此任务。",
+      "evidence": []
+    },
+    {
+      "source_key": "exp:er",
+      "target_key": "model:er1",
+      "relation_type": "evaluates",
+      "description": "后续离线实验评估模型的一个可验证能力。",
+      "evidence": []
+    },
+    {
+      "source_key": "task:05",
+      "target_key": "exp:er",
+      "relation_type": "uses",
+      "description": "最小实验按顺序开展。",
+      "evidence": []
+    },
+    {
+      "source_key": "exp:wma",
+      "target_key": "model:wma",
+      "relation_type": "evaluates",
+      "description": "后续离线实验评估模型的一个可验证能力。",
+      "evidence": []
+    },
+    {
+      "source_key": "task:05",
+      "target_key": "exp:wma",
+      "relation_type": "uses",
+      "description": "最小实验按顺序开展。",
+      "evidence": []
+    },
+    {
+      "source_key": "exp:wla",
+      "target_key": "model:wla",
+      "relation_type": "evaluates",
+      "description": "后续离线实验评估模型的一个可验证能力。",
+      "evidence": []
+    },
+    {
+      "source_key": "task:05",
+      "target_key": "exp:wla",
+      "relation_type": "uses",
+      "description": "最小实验按顺序开展。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "comparison",
+      "relation_type": "related_to",
+      "description": "第一组研究的核心材料与模型。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "actions",
+      "relation_type": "related_to",
+      "description": "第一组研究的核心材料与模型。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "gaps",
+      "relation_type": "related_to",
+      "description": "第一组研究的核心材料与模型。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "fusion",
+      "relation_type": "related_to",
+      "description": "第一组研究的核心材料与模型。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "runbook",
+      "relation_type": "related_to",
+      "description": "第一组研究的核心材料与模型。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "talk",
+      "relation_type": "related_to",
+      "description": "第一组研究的核心材料与模型。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "model:wma",
+      "relation_type": "related_to",
+      "description": "第一组研究的核心材料与模型。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "model:vla",
+      "relation_type": "related_to",
+      "description": "第一组研究的核心材料与模型。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "model:er1",
+      "relation_type": "related_to",
+      "description": "第一组研究的核心材料与模型。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "model:flow",
+      "relation_type": "related_to",
+      "description": "第一组研究的核心材料与模型。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "model:wla",
+      "relation_type": "related_to",
+      "description": "第一组研究的核心材料与模型。",
+      "evidence": []
+    },
+    {
+      "source_key": "repo:wma",
+      "target_key": "model:wma",
+      "relation_type": "implements",
+      "description": "官方代码库提供该模型的公开实现。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/README.md",
+          "locator": "",
+          "explanation": "官方代码库提供该模型的公开实现。"
+        }
+      ]
+    },
+    {
+      "source_key": "repo:vla",
+      "target_key": "model:vla",
+      "relation_type": "implements",
+      "description": "官方代码库提供该模型的公开实现。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/README.md",
+          "locator": "",
+          "explanation": "官方代码库提供该模型的公开实现。"
+        }
+      ]
+    },
+    {
+      "source_key": "repo:wla",
+      "target_key": "model:wla",
+      "relation_type": "implements",
+      "description": "官方代码库提供该模型的公开实现。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/README.md",
+          "locator": "",
+          "explanation": "官方代码库提供该模型的公开实现。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wma",
+      "target_key": "base:dynamic",
+      "relation_type": "depends_on",
+      "description": "基座／表征／代码继承关系；WMA→DynamiCrafter仅代表公开代码与方法来源，原始checkpoint仍待确认。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/README.md",
+          "locator": "",
+          "explanation": "基座／表征／代码继承关系；WMA→DynamiCrafter仅代表公开代码与方法来源，原始checkpoint仍待确认。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:vla",
+      "target_key": "base:vlm",
+      "relation_type": "depends_on",
+      "description": "官方明确说明的基座或继续训练来源。",
+      "evidence": [
+        {
+          "source_url": "https://unigen-x.github.io/unifolm-vla.github.io/",
+          "locator": "",
+          "explanation": "官方明确说明的基座或继续训练来源。"
+        }
+      ]
+    },
+    {
+      "source_key": "base:vlm",
+      "target_key": "base:qwen25",
+      "relation_type": "depends_on",
+      "description": "官方明确说明的基座或继续训练来源。",
+      "evidence": [
+        {
+          "source_url": "https://unigen-x.github.io/unifolm-vla.github.io/",
+          "locator": "",
+          "explanation": "官方明确说明的基座或继续训练来源。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:er1",
+      "target_key": "base:qwen3",
+      "relation_type": "depends_on",
+      "description": "官方明确说明的基座或继续训练来源。",
+      "evidence": [
+        {
+          "source_url": "https://huggingface.co/unitreerobotics/UnifoLM-ER-1/blob/dfb321b4317a011ce80622b9305b5dbb6513241b/README.md",
+          "locator": "",
+          "explanation": "官方明确说明的基座或继续训练来源。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:flow",
+      "target_key": "model:er1",
+      "relation_type": "depends_on",
+      "description": "官方明确说明的基座或继续训练来源。",
+      "evidence": [
+        {
+          "source_url": "https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/blob/f6dea62ca3fb42a633723b80d7f4b38b321f010e/README.md",
+          "locator": "",
+          "explanation": "官方明确说明的基座或继续训练来源。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wla",
+      "target_key": "model:flow",
+      "relation_type": "depends_on",
+      "description": "官方明确说明的基座或继续训练来源。",
+      "evidence": [
+        {
+          "source_url": "https://unigen-x.github.io/unifolm-wla.github.io/",
+          "locator": "",
+          "explanation": "官方明确说明的基座或继续训练来源。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wma",
+      "target_key": "concept:latent",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/configs/inference/base_model_inference.yaml",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wma",
+      "target_key": "concept:policy",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://arxiv.org/abs/2303.04137",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wma",
+      "target_key": "concept:chunk",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/scripts/run_world_model_interaction.sh",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:vla",
+      "target_key": "concept:fm",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/model/modules/action_model/DiT_ActionHeader.py",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:vla",
+      "target_key": "concept:dit",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/model/modules/action_model/DiT_ActionHeader.py",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:vla",
+      "target_key": "concept:chunk",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/scripts/run_world_model_interaction.sh",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:vla",
+      "target_key": "concept:norm",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:flow",
+      "target_key": "concept:flowmask",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://huggingface.co/unitreerobotics/UnifoLM-ER-Flow/blob/f6dea62ca3fb42a633723b80d7f4b38b321f010e/README.md",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:flow",
+      "target_key": "concept:vq",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://arxiv.org/abs/1711.00937",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wla",
+      "target_key": "concept:fm",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/src/unifolm_vla/model/modules/action_model/DiT_ActionHeader.py",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wla",
+      "target_key": "concept:mmdit",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/model/modules/action_model/DiT_modules/mmdit.py",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wla",
+      "target_key": "concept:space",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wla",
+      "target_key": "concept:se3",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wla",
+      "target_key": "concept:norm",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/docs/robot_action_state_processing.md",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wla",
+      "target_key": "concept:lora",
+      "relation_type": "uses",
+      "description": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/unifolm_wla/config/training/mmdit_lora_frozen_vlm.yaml",
+          "locator": "",
+          "explanation": "该模型的公开实现／方法使用或支持此项技术；LoRA是公开微调选项。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wma",
+      "target_key": "model:vla",
+      "relation_type": "compares_with",
+      "description": "研究比较：输入输出、世界建模目标与动作路径不同，不表示权重可直接融合。",
+      "evidence": []
+    },
+    {
+      "source_key": "model:wma",
+      "target_key": "model:wla",
+      "relation_type": "compares_with",
+      "description": "研究比较：输入输出、世界建模目标与动作路径不同，不表示权重可直接融合。",
+      "evidence": []
+    },
+    {
+      "source_key": "model:vla",
+      "target_key": "model:wla",
+      "relation_type": "compares_with",
+      "description": "研究比较：输入输出、世界建模目标与动作路径不同，不表示权重可直接融合。",
+      "evidence": []
+    },
+    {
+      "source_key": "model:flow",
+      "target_key": "model:wma",
+      "relation_type": "compares_with",
+      "description": "研究比较：输入输出、世界建模目标与动作路径不同，不表示权重可直接融合。",
+      "evidence": []
+    },
+    {
+      "source_key": "paper:dynamic",
+      "target_key": "base:dynamic",
+      "relation_type": "supports",
+      "description": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。",
+      "evidence": [
+        {
+          "source_url": "https://arxiv.org/abs/2310.12190",
+          "locator": "",
+          "explanation": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。"
+        }
+      ]
+    },
+    {
+      "source_key": "paper:dp",
+      "target_key": "concept:policy",
+      "relation_type": "supports",
+      "description": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。",
+      "evidence": [
+        {
+          "source_url": "https://arxiv.org/abs/2303.04137",
+          "locator": "",
+          "explanation": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。"
+        }
+      ]
+    },
+    {
+      "source_key": "paper:fm",
+      "target_key": "concept:fm",
+      "relation_type": "supports",
+      "description": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。",
+      "evidence": [
+        {
+          "source_url": "https://arxiv.org/abs/2210.02747",
+          "locator": "",
+          "explanation": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。"
+        }
+      ]
+    },
+    {
+      "source_key": "paper:vq",
+      "target_key": "concept:vq",
+      "relation_type": "supports",
+      "description": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。",
+      "evidence": [
+        {
+          "source_url": "https://arxiv.org/abs/1711.00937",
+          "locator": "",
+          "explanation": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。"
+        }
+      ]
+    },
+    {
+      "source_key": "paper:mmdit",
+      "target_key": "concept:mmdit",
+      "relation_type": "supports",
+      "description": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。",
+      "evidence": [
+        {
+          "source_url": "https://arxiv.org/abs/2403.03206",
+          "locator": "",
+          "explanation": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。"
+        }
+      ]
+    },
+    {
+      "source_key": "paper:q25",
+      "target_key": "base:qwen25",
+      "relation_type": "supports",
+      "description": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。",
+      "evidence": [
+        {
+          "source_url": "https://arxiv.org/abs/2502.13923",
+          "locator": "",
+          "explanation": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。"
+        }
+      ]
+    },
+    {
+      "source_key": "paper:q3",
+      "target_key": "base:qwen3",
+      "relation_type": "supports",
+      "description": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。",
+      "evidence": [
+        {
+          "source_url": "https://arxiv.org/abs/2511.21631",
+          "locator": "",
+          "explanation": "上游原始论文提供概念或结构背景；不代替宇树模型性能证据。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wma",
+      "target_key": "data:oxe",
+      "relation_type": "uses",
+      "description": "官方数据／评估路径关联。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-world-model-action/blob/3e198de68de55f93f24b3ad623dd499390aaee45/README.md",
+          "locator": "",
+          "explanation": "官方数据／评估路径关联。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:vla",
+      "target_key": "benchmark:libero",
+      "relation_type": "uses",
+      "description": "官方数据／评估路径关联。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-vla/blob/ff6c39aeb0454cfb95418c66aef40ca777f935c1/README.md",
+          "locator": "",
+          "explanation": "官方数据／评估路径关联。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wla",
+      "target_key": "data:dex1",
+      "relation_type": "uses",
+      "description": "官方数据／评估路径关联。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/README.md",
+          "locator": "",
+          "explanation": "官方数据／评估路径关联。"
+        }
+      ]
+    },
+    {
+      "source_key": "model:wla",
+      "target_key": "data:wbt",
+      "relation_type": "uses",
+      "description": "官方数据／评估路径关联。",
+      "evidence": [
+        {
+          "source_url": "https://github.com/unitreerobotics/unifolm-wla/blob/0a1aa87be8f775c7883fcd27216e3666ac18a8c5/README.md",
+          "locator": "",
+          "explanation": "官方数据／评估路径关联。"
+        }
+      ]
+    },
+    {
+      "source_key": "gaps",
+      "target_key": "model:wma",
+      "relation_type": "questions",
+      "description": "需要补齐公开材料或进行实际运行验证。",
+      "evidence": []
+    },
+    {
+      "source_key": "gaps",
+      "target_key": "model:vla",
+      "relation_type": "questions",
+      "description": "需要补齐公开材料或进行实际运行验证。",
+      "evidence": []
+    },
+    {
+      "source_key": "gaps",
+      "target_key": "model:flow",
+      "relation_type": "questions",
+      "description": "需要补齐公开材料或进行实际运行验证。",
+      "evidence": []
+    },
+    {
+      "source_key": "gaps",
+      "target_key": "model:wla",
+      "relation_type": "questions",
+      "description": "需要补齐公开材料或进行实际运行验证。",
+      "evidence": []
+    },
+    {
+      "source_key": "fusion",
+      "target_key": "model:wma",
+      "relation_type": "related_to",
+      "description": "组合或表征对照的研究假设，尚未实测。",
+      "evidence": []
+    },
+    {
+      "source_key": "fusion",
+      "target_key": "model:vla",
+      "relation_type": "related_to",
+      "description": "组合或表征对照的研究假设，尚未实测。",
+      "evidence": []
+    },
+    {
+      "source_key": "fusion",
+      "target_key": "model:flow",
+      "relation_type": "related_to",
+      "description": "组合或表征对照的研究假设，尚未实测。",
+      "evidence": []
+    },
+    {
+      "source_key": "fusion",
+      "target_key": "model:wla",
+      "relation_type": "related_to",
+      "description": "组合或表征对照的研究假设，尚未实测。",
+      "evidence": []
+    },
+    {
+      "source_key": "runbook",
+      "target_key": "budget",
+      "relation_type": "uses",
+      "description": "先核对磁盘预算再安排模型下载。",
+      "evidence": []
+    },
+    {
+      "source_key": "hub",
+      "target_key": "budget",
+      "relation_type": "related_to",
+      "description": "第一组实验资源预算。",
+      "evidence": []
+    }
+  ]
+}

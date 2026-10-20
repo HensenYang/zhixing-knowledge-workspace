@@ -1,0 +1,422 @@
+[
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-ER-1\\config.json",
+    "bytes": 1680,
+    "sha256": "154b5ea4edba31f9486a352b061a59d77bcae1548a8606263c30d39ebde34243"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-ER-1\\metadata.json",
+    "bytes": 8792,
+    "sha256": "7de7d6c9f3d17f3c273fd96f11c60adceb9b54e6bc128735846757174a67607b"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-ER-1\\README.md",
+    "bytes": 5161,
+    "sha256": "915ebdbeb45cf27e2e7ecf0234dc1773a8eab450d15b015cae1886927c8b940b"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-ER-Flow\\config.json",
+    "bytes": 2878,
+    "sha256": "81a24ef1ff508d900726f1a1e6b843eacee3b3c5c6310e438a48906d4bd587b6"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-ER-Flow\\metadata.json",
+    "bytes": 6146,
+    "sha256": "aca402d2b8de76c3136eeeb0e452015b77f6a3946404265ee974f28b7a2a899c"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-ER-Flow\\README.md",
+    "bytes": 3326,
+    "sha256": "86839125961a5d245d52ff6db2b979cec1e5730fedad51c90c1ff9ab2488fe6b"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-VLA-Base\\config.yaml",
+    "bytes": 2156,
+    "sha256": "cbd55d0675512678b2fa74a4f67a184f4e2e95bc4b6217a1cf2dfd21d4c2904e"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-VLA-Base\\dataset_statistics.json",
+    "bytes": 110442,
+    "sha256": "4f500e5c452704b21b2bc9532a2243d8db5c6f5e8e44fef42d6832ff55270c63"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-VLA-Base\\metadata.json",
+    "bytes": 1663,
+    "sha256": "9853eb91016e5f9c983c4a30c9e965b44c50d4c44db3a9a47d1cdf29a22c29b8"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-VLA-Base\\README.md",
+    "bytes": 2612,
+    "sha256": "2d717dcf11526e714bde9a1f2feacadb2ec387e350ca6da4023b95eb5c7af048"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-VLA-Libero\\config.yaml",
+    "bytes": 2124,
+    "sha256": "f1788ee6ea68c185bf5beef4d4a8292adef97527699d98da6a689ee0d2456ff1"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-VLA-Libero\\dataset_statistics.json",
+    "bytes": 11871,
+    "sha256": "6ec6ef68d0d5bae4cb5f9fc9acb715a22b9f4545e9e9b300d0d88695cd7afec3"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-VLA-Libero\\metadata.json",
+    "bytes": 1665,
+    "sha256": "61002d97ed5a64f973b9175aeab16315b631ac145e465ff9f8f521cac08a3b28"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-VLA-Libero\\README.md",
+    "bytes": 2587,
+    "sha256": "546d13d75260cede7f1fe2fc5cd4ed70bdf0b28632a1e2816a963eca7a8213f8"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-VLM-Base\\config.json",
+    "bytes": 3208,
+    "sha256": "b9597690669f36ba1ce20c8019b5327e8a9cff634053fac244465889d87179b2"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-VLM-Base\\metadata.json",
+    "bytes": 5519,
+    "sha256": "b09713b928e5894d19c553fb7bc5ef2d3dbf800350f5b828552345c294c1ec7a"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-VLM-Base\\README.md",
+    "bytes": 2586,
+    "sha256": "d5ccb982e9fdd4154701ee343a9a7215b3ee502ea90eb3894e7b2c024aa3065b"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-WLA-1.0-Base\\config.yaml",
+    "bytes": 1069,
+    "sha256": "741101297d55e9885a80189ed8087daebd275a635a2915999fc2fa81a8006925"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-WLA-1.0-Base\\dataset_statistics.json",
+    "bytes": 10635,
+    "sha256": "92957d292a212bdae8e2155408770d965a3687e100ce25760b208444d9620788"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-WLA-1.0-Base\\metadata.json",
+    "bytes": 2740,
+    "sha256": "271f57f2463d355a9f56657c2b55eaa585aa49f974df5aa627596576e9a73c5a"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-WLA-1.0-Base\\README.md",
+    "bytes": 28,
+    "sha256": "98b45ea81164d1e1a1dd82255207053b15cd6c69d922a1c5cf3387ce604d4b74"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-WLA-1.0-Base\\tokenizer\\config.json",
+    "bytes": 2878,
+    "sha256": "81a24ef1ff508d900726f1a1e6b843eacee3b3c5c6310e438a48906d4bd587b6"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-WMA-0-Base\\metadata.json",
+    "bytes": 2921,
+    "sha256": "ee27037ce3ae54c580a418002c690506ceebf73f0090a1854d5c7864e52f0334"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-WMA-0-Base\\README.md",
+    "bytes": 2263,
+    "sha256": "b655e5a2a5161eadb3df25245999973c154fd17805b9b2c803e79de2f60eae89"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-WMA-0-Dual\\metadata.json",
+    "bytes": 2920,
+    "sha256": "ef356550f6eedd275d4871d66a964dc75e5b3f6bb57874ef6d98f9f6bbb408b7"
+  },
+  {
+    "local_path": "sources\\huggingface\\UnifoLM-WMA-0-Dual\\README.md",
+    "bytes": 2262,
+    "sha256": "78cd904ae870df6a89cca67e9116af22314867e77506d1f62da07a85fb88809f"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\commit.json",
+    "bytes": 200,
+    "sha256": "781aeacb152fbea00a1f90859226927d4a5e943cb222da94ba686856e0c1b874"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\deployment\\model_server\\run_real_eval_server.py",
+    "bytes": 14781,
+    "sha256": "d47c781899d23d1728521ea424ed39236b78ce8299ab0f7335a47a70397f8670"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\experiments\\LIBERO\\eval_libero.py",
+    "bytes": 14160,
+    "sha256": "d613bd537e69ae68cbdfbf6eaf9799727b37e4cd665159969ac1d6f5adef842a"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\experiments\\LIBERO\\unifolm_vla_inference.py",
+    "bytes": 8587,
+    "sha256": "5dd68b332e68ed020032230b9dfe862a2e135e45edaa834aebce23968f093553"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\pyproject.toml",
+    "bytes": 2454,
+    "sha256": "3cb21aa3382777dcc99f500fef24feeed078b4f1c9e33d02757915302774045e"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\README.md",
+    "bytes": 12601,
+    "sha256": "16bbf90d5cdb189c527677984692a8d7aa6a8490f9ac776bfa4e65741a2c1355"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\README_cn.md",
+    "bytes": 11208,
+    "sha256": "d9e3aba249933fe88706b993495decf9180e516483ccc402938fcacb8f4d0365"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\scripts\\eval_scripts\\run_eval_libero.sh",
+    "bytes": 1340,
+    "sha256": "1b658b901646b627b500068a4ba7223ec621c94a8ca09a451a6009e4bbfd8f47"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\scripts\\eval_scripts\\run_real_eval_server.sh",
+    "bytes": 243,
+    "sha256": "12a3ba0de23956797d6b89f774b117bab6ae150402d70b6882bd8a308d1b8726"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\scripts\\run_scripts\\run_unifolm_vla_train.sh",
+    "bytes": 1600,
+    "sha256": "0630780994c1fc6efffcf6cd92cd5fce246d0bca9531d8ff34e1072ce7ee66ba"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\src\\unifolm_vla\\config\\training\\unifolm_vla_train.yaml",
+    "bytes": 2089,
+    "sha256": "02f8d3682d5a9a9eac2d78b19ef5fa749df923eef0bbe542a5134295dbb55de4"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\src\\unifolm_vla\\model\\framework\\base_framework.py",
+    "bytes": 6069,
+    "sha256": "4e54c1c8198bfc3bc6ed56e7168706cccfe1fb9f6953ab6d50cd8d9c636c4ff0"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\src\\unifolm_vla\\model\\framework\\share_tools.py",
+    "bytes": 6976,
+    "sha256": "439eadf381bc12f8fc1d741e81b51163715c2c072a0f8aac8eec35d6743941ce"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\src\\unifolm_vla\\model\\framework\\unifolm_vla.py",
+    "bytes": 4080,
+    "sha256": "461e3c21ae0fa22811fd667a5000dc37f5f6f6b7d178a4b7c9aadbdedaf902a1"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\src\\unifolm_vla\\model\\modules\\action_model\\DiT_ActionHeader.py",
+    "bytes": 11971,
+    "sha256": "eb57048ab99c483c6a3929786b98f4edd6d396bc642612e47a71d1f3d2685aa2"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\src\\unifolm_vla\\model\\modules\\vlm\\QWen2_5.py",
+    "bytes": 13693,
+    "sha256": "af3131079ff8218122d4f9e8c2f016392864973cfcfef388c8ddfe0ae5021c88"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\src\\unifolm_vla\\model\\tools.py",
+    "bytes": 6290,
+    "sha256": "16ec6413f79232be315d8f7d5a1abe72ac7b6811ca318285397daac2d1a1fd9b"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\src\\unifolm_vla\\rlds_dataloader\\constants.py",
+    "bytes": 3932,
+    "sha256": "851ef3d180ec0d1f4e71325622d9bca36819d27027da79ede973344e9d104337"
+  },
+  {
+    "local_path": "sources\\unifolm-vla\\tree.json",
+    "bytes": 32189,
+    "sha256": "534051cf0edd220e705a044115644dee8c1086f5b8ff43f74b12bdb490107293"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\commit.json",
+    "bytes": 200,
+    "sha256": "fb6878fcf1466fd92fba3f705ce61066a839b8c280d3e83e8ae7763e389ccccf"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\docs\\robot_action_state_processing.md",
+    "bytes": 39201,
+    "sha256": "bdb48afbec1d0fccfd80d4d5c3076388001544c0fb48ebbfd88b9c963005ea32"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\docs\\robot_action_state_processing_en.md",
+    "bytes": 43194,
+    "sha256": "5d6734c632721f99c9acea4bac06f0532678f63eb98a02ceace680f8f7dbb45e"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\docs\\train_action_expert.md",
+    "bytes": 14689,
+    "sha256": "fec421ae59aa493689bbee62a897ece98f59c0ff521e574d5968f4914cfcc948"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\docs\\train_action_expert_en.md",
+    "bytes": 14706,
+    "sha256": "7410c6f0ce70d15ce94a896196c4f07240705f6d0b195c752a48ff9a343c800c"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\examples\\unifolm_wla\\eval_files\\unitree\\eval_local_episode.py",
+    "bytes": 21369,
+    "sha256": "a7e6af58943d08bda0668b1938f63eb684f7f3f17e848f9ea15f91b737d88d19"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\examples\\unifolm_wla\\train_files\\run_finetune_mmdit_frozen_vlm.sh",
+    "bytes": 1484,
+    "sha256": "d1035b16464e49b9eef291ff2252e3cf6fed2e525d9a94f4a8881c1e5b49b54b"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\model_server\\unifolm_wla_action_adapter.py",
+    "bytes": 8642,
+    "sha256": "6604b6508c171200d20fc0ba53be753f562d3132073492c4f83f1668086c87f0"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\pyproject.toml",
+    "bytes": 2393,
+    "sha256": "35ff2ded342d21ccd616c9c1e3ddf36fc67448fc86365590e9c082adb23c180c"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\README.md",
+    "bytes": 4491,
+    "sha256": "a292f851fd5094a4f3652ee6f89372dae3aa17861991216a073ea030c2a6d0cf"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\README_zh.md",
+    "bytes": 4043,
+    "sha256": "ed759a2b3e3b86a14e738a3ec71a7d55d824a8d6226404c291d6b74b087efbf5"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\tree.json",
+    "bytes": 33100,
+    "sha256": "47e60d532654f4471d15034b1f8f9e60c185b720e980c7fadb9a8260c09a88f9"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\unifolm_wla\\config\\training\\mmdit_finetune_frozen_vlm.yaml",
+    "bytes": 2607,
+    "sha256": "b9b2fc2344730272a97df66057a6c8387073131e747d2b3c1befdf0d0f71c245"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\unifolm_wla\\config\\training\\mmdit_lora_frozen_vlm.yaml",
+    "bytes": 3363,
+    "sha256": "0817cefbb1662c842be0de8a0c050db6b3f1e04800b722d42e22a6d158b59a06"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\unifolm_wla\\config\\training\\unifolm_wla_pretrain_multisource.yaml",
+    "bytes": 1991,
+    "sha256": "fa8dd6800734b2851db83c38f8f733d114d9cbb319afb34caaf2f7a092d399b8"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\unifolm_wla\\dataloader\\multi_source_dataset\\configs\\unitree.yaml",
+    "bytes": 3929,
+    "sha256": "3e3f9d7e081eb493f94bd485949eb3fa3214c3f4545660472e18c4de9c19e47e"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\unifolm_wla\\model\\framework\\VLM4A\\QwenMMDiT.py",
+    "bytes": 16138,
+    "sha256": "75f10674f374ab51069ce14ef3b9b54fd60ab39cabf857a963b95fb48c2ee3f2"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\unifolm_wla\\model\\modules\\action_model\\DiT_modules\\mmdit.py",
+    "bytes": 28234,
+    "sha256": "45f8bb0ecaa110b1bf3d523340b1f4faf1ce414f52e1de01b0fe896da181fb9a"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\unifolm_wla\\model\\modules\\action_model\\MMDiT_ActionHeader.py",
+    "bytes": 15531,
+    "sha256": "21691d9b8e118b724b93152c4b2aad4ddac898a32037a915bfa0f133e8db7b9f"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\unifolm_wla\\model\\modules\\projector\\robot_state.py",
+    "bytes": 9147,
+    "sha256": "e45e60139eea168968fe17b12a5250fca692b88c479beb6d6e9effe5b89eba9c"
+  },
+  {
+    "local_path": "sources\\unifolm-wla\\unifolm_wla\\model\\modules\\vlm\\QWen3.py",
+    "bytes": 18852,
+    "sha256": "c960b440ac6ff5c77c7f13c6f9afe84a832a7e4c3d89b4e6cef4f2858791c370"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\commit.json",
+    "bytes": 215,
+    "sha256": "a0e4a08339366449383947f845e35ade42df7824a4cba2588f2fc80ac146112e"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\configs\\inference\\base_model_inference.yaml",
+    "bytes": 6493,
+    "sha256": "014aaa68980a9a36c249955580679b45a93930c6997a12174f290b81a20359af"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\configs\\inference\\world_model_decision_making.yaml",
+    "bytes": 7569,
+    "sha256": "e7ababc253d7275a36af3ea7d6a5d80341fe0ebaf669ff99da46483478602fc2"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\configs\\inference\\world_model_interaction.yaml",
+    "bytes": 7619,
+    "sha256": "7ddfb49540cf6b8b925adfceff940c1c1024ace2e4cdce34d9c47e4cd408d5cd"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\configs\\train\\config.yaml",
+    "bytes": 8847,
+    "sha256": "8b53c25b596321712c40c495f748415d6e7fd39afbc891a8f1321004c0d1263b"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\pyproject.toml",
+    "bytes": 1229,
+    "sha256": "3b80c2937422cce76b36313a1954460dc4bdc64b39a03b4373678ef4e905f3bb"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\README.md",
+    "bytes": 14738,
+    "sha256": "f515e988d1a9cad26f8f8d25d5543a34bdc409e648b06d6f6e1a8f8fd4d200e0"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\README_cn.md",
+    "bytes": 13788,
+    "sha256": "a0d90935588db64b5b749c1434ed1ea9713f08135d6634323d53663ef70794dd"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\scripts\\evaluation\\base_model_inference.py",
+    "bytes": 20154,
+    "sha256": "da0c676727502cad5649ceed88034bf66f86e56208add7b3b2f25e8e3ea25bf6"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\scripts\\evaluation\\eval_utils.py",
+    "bytes": 2198,
+    "sha256": "f71a33c5d94d509c631729193e34b58554acdd64e81746ee01d8792975539662"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\scripts\\evaluation\\world_model_interaction.py",
+    "bytes": 32815,
+    "sha256": "c0846f061c4e361f4bbd456e9e615d77630f2dd93ba37758a1c35af7d305e571"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\scripts\\run_base_model_inference.sh",
+    "bytes": 595,
+    "sha256": "b011aae500d5286060207eeffafd940e7edd35e35c527eacc191811da108e2cc"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\scripts\\run_real_eval_server.sh",
+    "bytes": 703,
+    "sha256": "11564f4b556211b9377863e9bb5d1283bc461d0d833171c3229e4caec98ae69e"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\scripts\\run_world_model_interaction.sh",
+    "bytes": 1151,
+    "sha256": "fdf0e6f90178a0bbd4279c3388fa04ffc4531e80af82521ca649ce2746a68cad"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\src\\unifolm_wma\\models\\ddpms.py",
+    "bytes": 102922,
+    "sha256": "85221453594801ed31776a6edd76eb8c3f680ebdc18e0ac96f5abe4a470b5f1e"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\src\\unifolm_wma\\models\\samplers\\ddim.py",
+    "bytes": 19204,
+    "sha256": "09afd66e8d933d8d32b9a9df8b692bee11e20fe7cd6653332e3012caabea2c9d"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\src\\unifolm_wma\\modules\\networks\\wma_model.py",
+    "bytes": 36766,
+    "sha256": "8617e3fb2901914aa2871741cbd252c1fb47e5f4e343ebc10d51341ec4831dc5"
+  },
+  {
+    "local_path": "sources\\unifolm-world-model-action\\tree.json",
+    "bytes": 107493,
+    "sha256": "34ff832b8a91312c294b5b2c4d9918a21a12d08a38141ee1a99df875db4f5f9d"
+  }
+]
