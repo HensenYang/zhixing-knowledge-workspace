@@ -196,10 +196,12 @@ async def import_github(source: str) -> dict:
         raise HTTPException(502, "GitHub 返回了无法解析的内容。") from exc
     warnings: list[str] = []
     readme = ""
+    readme_path = "README.md"
     commit = ""
     try:
         readme_response = await _get(f"{base}/readme", headers=headers)
         payload = readme_response.json()
+        readme_path = payload.get("path") or "README.md"
         if payload.get("encoding") == "base64":
             readme = base64.b64decode(payload.get("content", ""), validate=False).decode("utf-8", errors="replace")
     except HTTPException as exc:
@@ -221,7 +223,7 @@ async def import_github(source: str) -> dict:
         title=data.get("full_name") or f"{owner}/{repo}", summary=_clean(data.get("description")),
         body_md=readme, kind="repository", tags=tags, warnings=warnings,
         metadata={
-            "commit": commit, "default_branch": branch, "language": data.get("language") or "",
+            "commit": commit, "default_branch": branch, "readme_path": readme_path, "language": data.get("language") or "",
             "license": ((data.get("license") or {}).get("spdx_id") or ""),
             "stars": data.get("stargazers_count", 0), "import_provider": "github",
         },

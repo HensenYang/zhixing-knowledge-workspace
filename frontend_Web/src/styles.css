@@ -47,3 +47,11 @@
 /* Keep the language switch reachable on desktop and narrow screens. */
 .language-switch{display:flex;align-items:center;gap:6px;flex-shrink:0;color:#587061}.language-switch select{width:104px;padding:6px 8px;background:#fff;font-size:12px}.topbar .global-search{min-width:0}.topbar .global-search input{min-width:0}
 @media(max-width:760px){.language-switch{gap:3px}.language-switch select{width:88px;padding:6px;font-size:12px}.language-switch svg{width:15px}.topbar .avatar{display:none}}
+
+.zotero-results{list-style:none;padding:0;margin:16px 0 0;display:grid;gap:12px;max-height:480px;overflow:auto}.zotero-results li{padding:14px;border:1px solid #e4eadc;border-radius:8px;overflow-wrap:anywhere}.zotero-results p{font-size:12px;margin:6px 0}.zotero-import .check{margin-top:14px;align-items:flex-start}.zotero-import input,.zotero-import select{min-width:0}
+
+.markdown img{height:auto;vertical-align:middle}.markdown [align="center"]{text-align:center}.markdown [align="right"]{text-align:right}.markdown details{border:1px solid #dce5d0;padding:12px;border-radius:6px}.markdown summary{cursor:pointer}.markdown table{display:block;overflow:auto}.image-unavailable{display:inline-block;padding:10px;border:1px dashed #c8d8b9;color:#8c6a36;font-size:12px}.import-asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;max-height:380px;overflow:auto}.import-asset-grid article{border:1px solid #e4eadc;border-radius:7px;padding:10px;min-width:0;overflow-wrap:anywhere}.import-asset-grid img{height:150px;width:100%;object-fit:contain;background:#f7f9f3}.import-asset-grid a,.import-asset-grid small{display:block;font-size:11px;margin-top:6px}.import-assets{margin:18px 0}.import-rendered-preview{margin:18px 0}.import-rendered-preview .markdown{margin-top:16px}
+
+.markdown img{display:inline-block}.markdown input[type="checkbox"]{display:inline-block;width:auto;margin:0 .5em 0 0;vertical-align:middle}.markdown li:has(input[type="checkbox"]){list-style:none}
+
+.import-review-fields{border:0;padding:0;margin:0;min-width:0}.import-analysis{padding:16px;background:#f5f8f1;border:1px solid #e4eadc;border-radius:8px;margin:18px 0}.import-analysis h3{margin-top:0}.import-review-fields>.check{align-items:flex-start}

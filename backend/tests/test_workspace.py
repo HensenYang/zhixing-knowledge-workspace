@@ -319,3 +319,56 @@ def test_invalid_reference_rolls_back_complete_import(client):
     response=client.post('/api/import?dry_run=false',files={'file':('invalid.zip',output.getvalue())})
     assert response.status_code==409,response.text
     assert len(client.get('/api/objects').json())==1
+
+
+def test_pdf_import_commits_images_original_and_body_references_with_backup(client):
+    from backend.tests.test_import_assets import pdf_bytes
+    preview=client.post('/api/source-imports/preview-file',files={'file':('figures.pdf',pdf_bytes(),'application/pdf')})
+    assert preview.status_code==200,preview.text
+    data=preview.json()
+    assert {asset['kind'] for asset in data['assets']}=={'source','image','page'}
+    assert client.get('/api/objects').json()==[]
+    payload={'source_type':'pdf','source_key':data['source_key'],'preview_token':data['preview_token'],
+             'object':{'kind':'resource','title':'PDF image import','body_md':data['body_md'],'metadata':data['metadata']}}
+    saved=client.post('/api/source-imports/commit',json=payload)
+    assert saved.status_code==201,saved.text
+    item=saved.json()
+    assert 'import-asset://' not in item['body_md']
+    attachments=client.get(f"/api/objects/{item['id']}/attachments").json()
+    assert len(attachments)==3
+    for asset in attachments:
+        image=client.get(f"/api/attachments/{asset['id']}/content")
+        assert image.status_code==200
+        assert image.headers['content-disposition'].startswith('inline')
+        if asset['mime_type']=='image/png':
+            assert image.content.startswith(b'\x89PNG')
+            assert f"/api/attachments/{asset['id']}/content" in item['body_md']
+    assert client.get(data['assets'][0]['preview_url']).status_code==404
+    assert client.post('/api/source-imports/commit',json={**payload,'preview_token':None}).status_code==409
+    archive=zipfile.ZipFile(io.BytesIO(client.get('/api/export').content))
+    manifest=json.loads(archive.read('manifest.json'))
+    assert len(manifest['tables']['attachments'])==3
+    for attachment in attachments:
+        assert archive.read(attachment['relative_path'])
+    assert manifest['tables']['objects'][0]['body_md']==item['body_md']
+
+
+def test_trashed_zotero_source_can_be_reimported_without_overwriting_old_material(client):
+    payload={'source_type':'mcp','source_key':'zotero:local:0:ABCD1234',
+        'object':{'kind':'resource','title':'Original paper','body_md':'Original preserved text'}}
+    first=client.post('/api/source-imports/commit',json=payload).json()
+    conflict=client.post('/api/source-imports/commit',json=payload)
+    assert conflict.status_code==409
+    assert conflict.json()['detail']['existing_import']['id']==first['id']
+    note=client.post('/api/source-imports/commit',json={**payload,'save_as_note':True,
+        'object':{**payload['object'],'body_md':'LLM findings\n\nOriginal preserved text'}})
+    assert note.status_code==201,note.text
+    assert note.json()['metadata']['derived_source']['object_id']==first['id']
+    assert client.get(f"/api/objects/{first['id']}").json()['body_md']=='Original preserved text'
+    assert client.delete(f"/api/objects/{first['id']}").status_code==200
+    assert client.get('/api/trash').json()
+    reimport=client.post('/api/source-imports/commit',json=payload)
+    assert reimport.status_code==201,reimport.text
+    assert reimport.json()['id']!=first['id']
+    assert any(x['id']==first['id'] for x in client.get('/api/trash').json())
+    assert client.post('/api/source-imports/commit',json=payload).status_code==409

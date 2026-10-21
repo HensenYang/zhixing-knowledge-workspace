@@ -9,7 +9,7 @@ Connect papers, code, datasets, concepts, and experiments into learning paths th
 ## Features
 
 - Markdown notes with mathematical notation, sources, tags, version conflict checks, and browser drafts.
-- Import arXiv, DOI, GitHub, PDF, and optional MCP sources, with a review before saving.
+- Import arXiv, DOI, GitHub, PDF, local Zotero, and optional MCP sources, with a review before saving.
 - Typed knowledge relationships with supporting evidence, a global graph, and editable canvases.
 - Save, reorder, and publish research learning paths with goals, guidance, and completion criteria.
 - Relationship-based reading: explore prerequisites, applications, evidence, and comparisons. The local graph follows the current note and highlights the reading trail.
@@ -45,6 +45,41 @@ To stop the services:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\stop.ps1
 ```
+
+## Local Zotero library (optional)
+
+The import page supports [kujenga/zotero-mcp](https://github.com/kujenga/zotero-mcp) over stdio: search your local library, read an item's metadata and indexed full text, edit the preview, and explicitly confirm the import. It does not modify Zotero or call the LLM.
+
+1. Open Zotero and enable **Allow other applications on this computer to communicate with Zotero** in its advanced settings. Download the relevant attachments and let Zotero index them for full-text access.
+2. Install `uv` if needed, then prepare the compatible MCP version: `uvx zotero-mcp@0.3.1 --help`.
+3. Add these settings to the project's existing `.env`, preserving your database and model settings:
+
+   ```dotenv
+   ZOTERO_MCP_ENABLED=true
+   ZOTERO_MCP_COMMAND=uvx
+   ZOTERO_MCP_ARGS=["zotero-mcp@0.3.1"]
+   ```
+
+4. Restart the backend. If this machine uses the bundled PostgreSQL runtime, stop the app with `scripts/stop.ps1`, then start it with `storage/local/start.ps1`. The normal startup applies pending database migrations.
+5. Open **Source Import → Source type → Zotero (local library)**. Enter search terms, choose the search scope and optional tag, and click **Search Zotero library**. Select **Read and preview** on a result, review the editable title, abstract, tags, metadata, and body, then choose **Confirm and create knowledge object**.
+
+Full text and media have separate checkboxes. For metadata-only imports, uncheck both **Include indexed full text in the preview when available** and **Include the original PDF and extracted images**. If an attachment is missing, unindexed, or cannot be read, the preview shows a warning and retains the metadata. Search limits cap matches before grouping by work; increase the limit or refine your query if needed. Separate search words with spaces: Zotero treats a hyphen as OR.
+
+The backend starts the configured executable directly and only calls the three read-only Zotero tools. Commands are configured locally, never supplied by the browser. The child process is forced into local-library mode; database and LLM credentials are not forwarded. If `uvx` is not on the backend's PATH, set `ZOTERO_MCP_COMMAND` to its absolute path. Other clients' MCP settings are not read automatically.
+
+Confirmed imports retain the Zotero item key, selection URI, citation key, authors, date, DOI, original metadata text, and available full text. When media is selected, the locally available original PDF and extracted images are copied on confirmation. If the PDF cannot be read, a warning is shown and text remains available. An active import offers an existing-material link or an explicit separate-note option. A source whose previous material is in the recycle bin can be imported again without changing that trashed material. Zotero uses the existing `mcp` source identifier with a namespaced item key, so this integration needs no additional migration beyond the source-import feature.
+
+Search and preview endpoints: `POST /api/source-imports/zotero/search` (`query`, `qmode`, optional `tag` and `limit`) and `POST /api/source-imports/zotero/preview` (`item_key`, `include_fulltext`, `include_media`). The existing confirmation endpoint performs the database write. See [import/export details](docs/import-export.md).
+
+## Images and HTML in imported material
+
+- **Local PDFs:** preview extracts embedded raster images and preserves pages containing vector graphics as page images. Images appear beneath their source page; this does not identify semantic figure boundaries or captions and does not perform OCR. The original PDF is also included.
+- **Zotero:** enable **Include the original PDF and extracted images** before choosing **Read and preview**. The backend asks Zotero's fixed local API for the stored or linked PDF; the browser cannot supply a filesystem path. Indexed text remains usable when the original PDF is unavailable.
+- **Review and save:** inspect the image thumbnails and rendered body preview, edit the Markdown, then confirm. Before confirmation, binaries are temporary preview files, not knowledge objects. Confirmation saves the note, source record, original PDF, image attachments, and permanent body references together. Failed database saves clean up copied files and retain the preview for retry. Saved attachments are included in ZIP backups.
+- **GitHub:** Markdown and HTML image paths resolve relative to the README directory and imported commit (or branch when no commit is available). Relative document links also resolve to GitHub. GitHub `blob` image links resolve to raw content. These remain remote images and require network access; they are not downloaded as local attachments. Existing notes benefit at read time without changing their stored text.
+- **HTML reading:** Markdown may contain headings, tables, images, centered sections, details/summary blocks, and heading anchors. HTML is parsed and sanitized before rendering; scripts, event handlers, iframes, and arbitrary inline styles are removed. Math, code blocks, and normal Markdown remain supported. Changing the interface language does not rewrite research content.
+
+PDFs remain limited to 32 MB. Image extraction processes up to 200 pages, 80 unique images/page previews, and 72 MB of combined preview assets. Images are rendered up to 1,800 pixels on the longest side. A warning explains any skipped assets; the original PDF preserves the complete source. Text previews retain their existing character limit, with image references added separately. Temporary preview URLs expire after two hours; extract again if confirmation reports an expired preview. Confirmed image URLs remain valid until their attachment is deleted.
 
 ## LLM / API key (optional)
 
@@ -88,6 +123,18 @@ Test the integration without a real API key or database:
 ```powershell
 .\.venv\Scripts\python.exe -m pytest backend/tests/test_llm.py -q
 ```
+
+## Analyze an import with an LLM
+
+1. Extract a local PDF or read a Zotero item into the import preview. Include full text for analysis of the supplied document; metadata-only input can only support metadata/abstract-based analysis.
+2. Click **Analyze with LLM**. The current title, abstract and Markdown text are sent to your configured provider and may incur charges. Image binaries and the original PDF are not sent; this feature does not perform OCR or visually interpret figures.
+3. The model detects the document’s main prose language and writes its summary, methods, findings and limitations in that language. Interface language never selects or retranslates the generated content. Mixed-language documents use their main language.
+4. Review and edit the result. The analysis is prepended to the original text; original image references remain intact. **Remove analysis and restore the earlier draft** restores the pre-analysis text, summary and metadata. Errors or truncated/invalid model output leave the draft unchanged.
+5. Confirm to save. For an active duplicate source, open the existing material or select **Save as a separate note**; saving a separate note records source provenance without changing the original. Reimporting a trashed source creates a new object and leaves the old one in the recycle bin.
+
+Long inputs use at most 48,000 source characters sampled from the beginning, middle and end. Both the preview and model prompt disclose excerpt coverage; the complete input draft remains in the saved body. Analysis metadata records the model, time, detected language, input hash, input/analysis character counts and token usage. This is a model-generated reading aid: verify its claims against the original.
+
+`POST /api/source-imports/analyze` accepts `title`, `summary` and `body_md`, returning `language`, `summary`, `analysis_md` and `provenance`; it never writes knowledge objects. `POST /api/source-imports/commit` accepts optional `save_as_note` (default `false`). Active duplicates return HTTP 409 with `detail.message` and `detail.existing_import` for an actionable link. Confirmation still saves staged attachments atomically. No new database migration is needed.
 
 ## Learning case study
 

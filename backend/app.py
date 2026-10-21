@@ -26,6 +26,9 @@ from backend.llm import router as llm_router
 
 from .exporters import material_docx, material_markdown, material_pdf
 from .importers import import_locator, import_pdf
+from . import zotero
+from . import import_assets
+from . import import_analysis
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(Path(os.environ.get('WORKSPACE_ENV_FILE', str(ROOT / '.env'))))
@@ -103,6 +106,19 @@ class SourceImportCommit(BaseModel):
     source_key: str = Field(min_length=1,max_length=1000)
     extracted_metadata: dict = Field(default_factory=dict)
     object: ObjectInput
+    preview_token: str | None = Field(default=None,pattern=r'^[A-Za-z0-9_-]{32}$')
+    save_as_note: bool = False
+
+class ZoteroSearchInput(BaseModel):
+    query: str = Field(min_length=1,max_length=1000)
+    qmode: Literal['titleCreatorYear','everything'] = 'titleCreatorYear'
+    tag: str = Field(default='',max_length=200)
+    limit: int = Field(default=20,ge=1,le=100)
+
+class ZoteroPreviewInput(BaseModel):
+    item_key: str = Field(pattern=r'^[A-Z0-9]{8}$')
+    include_fulltext: bool = True
+    include_media: bool = True
 
 class LearningPathStepInput(BaseModel):
     id: UUID | None = None
@@ -142,6 +158,9 @@ def object_with_tags(cursor, row):
 
 def add_duplicate_hints(preview):
     with db() as cursor:
+        cursor.execute('''SELECT o.id,o.title,o.deleted_at FROM source_imports s JOIN objects o ON o.id=s.object_id
+            WHERE s.source_type=%s AND s.source_key=%s''', (preview['source_type'],preview['source_key']))
+        preview['existing_import'] = cursor.fetchone()
         cursor.execute('''SELECT id,title,source_url FROM objects WHERE deleted_at IS NULL AND
             (lower(title)=lower(%s) OR (%s IS NOT NULL AND source_url=%s)) ORDER BY updated_at DESC LIMIT 5''',
             (preview['title'],preview.get('source_url'),preview.get('source_url')))
@@ -162,40 +181,91 @@ def health():
 def source_import_providers():
     return {
         'providers': ['arxiv','doi','github','pdf'],
+        'zotero': zotero.status(),
         'mcp': {
             'enabled': bool(os.environ.get('MCP_IMPORT_SERVER_URL','').strip()),
             'tool': os.environ.get('MCP_IMPORT_TOOL','import_source'),
         },
     }
 
+@app.post('/api/source-imports/zotero/search')
+async def search_zotero(data: ZoteroSearchInput):
+    return await zotero.search(data.query,data.qmode,data.tag,data.limit)
+
+@app.post('/api/source-imports/zotero/preview')
+async def preview_zotero(data: ZoteroPreviewInput):
+    preview = await zotero.preview(data.item_key,data.include_fulltext)
+    if data.include_media:
+        preview = await import_assets.zotero_pdf(preview,data.item_key,STORAGE)
+    return add_duplicate_hints(preview)
+
 @app.post('/api/source-imports/preview')
 async def preview_source(data: SourcePreviewInput):
     return add_duplicate_hints(await import_locator(data.source,data.source_type))
 
+@app.post('/api/source-imports/analyze')
+async def analyze_source(data: import_analysis.AnalysisInput):
+    return await import_analysis.analyze(data)
+
 @app.post('/api/source-imports/preview-file')
 async def preview_source_file(file: UploadFile = File(...)):
     content = await file.read(32 * 1024 * 1024 + 1)
-    return add_duplicate_hints(import_pdf(content,Path(file.filename or 'document.pdf').name))
+    return add_duplicate_hints(import_assets.local_pdf(content,Path(file.filename or 'document.pdf').name,STORAGE))
+
+@app.get('/api/source-imports/assets/{token}/{asset_id}')
+def preview_import_asset(token: str,asset_id: UUID):
+    path,asset = import_assets.asset_file(STORAGE,token,str(asset_id))
+    return FileResponse(path,media_type=asset['mime_type'],filename=asset['filename'],
+                        content_disposition_type='inline',headers={'X-Content-Type-Options':'nosniff'})
 
 @app.post('/api/source-imports/commit',status_code=201)
 def commit_source_import(data: SourceImportCommit):
     validate_object(data.object)
-    with db() as cursor:
-        cursor.execute('SELECT object_id FROM source_imports WHERE source_type=%s AND source_key=%s',
-            (data.source_type,data.source_key))
-        existing=cursor.fetchone()
-        if existing:
-            raise HTTPException(409,'该来源已经导入。请打开已有资料，或修改后使用普通新建笔记。')
-        item=data.object
-        cursor.execute('''INSERT INTO objects(kind,title,summary,body_md,source_url,reading_status,mastery_status,metadata)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *''',
-            (item.kind,item.title.strip(),item.summary,item.body_md,item.source_url,item.reading_status,item.mastery_status,json_value(item.metadata)))
-        row=cursor.fetchone()
-        set_tags(cursor,row['id'],item.tags)
-        cursor.execute('''INSERT INTO source_imports(source_type,source_key,source_url,original_name,extracted_metadata,object_id)
-            VALUES (%s,%s,%s,%s,%s,%s)''',
-            (data.source_type,data.source_key,item.source_url,data.extracted_metadata.get('file_name'),json_value(data.extracted_metadata),row['id']))
-        return object_with_tags(cursor,row)
+    written=[]
+    try:
+        with import_assets.claim(STORAGE,data.preview_token,data.source_type,data.source_key) as manifest:
+            with db() as cursor:
+                cursor.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
+                    (json.dumps([data.source_type,data.source_key]),))
+                cursor.execute('''SELECT s.object_id,o.title,o.deleted_at FROM source_imports s
+                    JOIN objects o ON o.id=s.object_id WHERE s.source_type=%s AND s.source_key=%s''',
+                    (data.source_type,data.source_key))
+                existing=cursor.fetchone()
+                if existing and existing['deleted_at'] is None and not data.save_as_note:
+                    raise HTTPException(409,{'message':'该来源已经导入，请打开已有资料或选择另存笔记。',
+                        'existing_import':{'id':str(existing['object_id']),'title':existing['title'],'deleted_at':None}})
+                item=data.object
+                if data.save_as_note:
+                    item.metadata={**item.metadata,'derived_source':{'source_type':data.source_type,
+                        'source_key':data.source_key,'object_id':str(existing['object_id']) if existing else None}}
+                item.body_md=import_assets.resolve_body(item.body_md,manifest)
+                assets=import_assets.persist(STORAGE,data.preview_token,manifest,written)
+                if assets:
+                    item.metadata={**item.metadata,'imported_assets':[{key:asset[key] for key in ('id','filename','kind','page')} for asset in assets]}
+                cursor.execute('''INSERT INTO objects(kind,title,summary,body_md,source_url,reading_status,mastery_status,metadata)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *''',
+                    (item.kind,item.title.strip(),item.summary,item.body_md,item.source_url,item.reading_status,item.mastery_status,json_value(item.metadata)))
+                row=cursor.fetchone()
+                set_tags(cursor,row['id'],item.tags)
+                if not data.save_as_note:
+                    cursor.execute('''INSERT INTO source_imports(source_type,source_key,source_url,original_name,extracted_metadata,object_id)
+                        VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT(source_type,source_key) DO UPDATE SET
+                        source_url=EXCLUDED.source_url,original_name=EXCLUDED.original_name,
+                        extracted_metadata=EXCLUDED.extracted_metadata,object_id=EXCLUDED.object_id''',
+                        (data.source_type,data.source_key,item.source_url,data.extracted_metadata.get('file_name'),json_value(data.extracted_metadata),row['id']))
+                for asset in assets:
+                    cursor.execute('INSERT INTO attachments(id,original_name,relative_path,mime_type,size_bytes,sha256) VALUES (%s,%s,%s,%s,%s,%s)',
+                        (asset['id'],asset['filename'],f"attachments/{asset['id']}",asset['mime_type'],asset['size_bytes'],asset['sha256']))
+                    cursor.execute('INSERT INTO object_attachments(object_id,attachment_id) VALUES (%s,%s)',(row['id'],asset['id']))
+                result=object_with_tags(cursor,row)
+    except Exception:
+        for path in written:
+            path.unlink(missing_ok=True)
+        raise
+    if data.preview_token:
+        import_assets.discard(STORAGE,data.preview_token)
+    return result
+
 
 def learning_path_document(cursor, identifier=None, share_token=None):
     if share_token is not None:
@@ -906,6 +976,18 @@ def download_attachment(identifier: UUID):
     if not path.is_file():
         raise HTTPException(404,'附件文件未找到。')
     return FileResponse(path,filename=row['original_name'],media_type=row['mime_type'])
+
+@app.get('/api/attachments/{identifier}/content')
+def inline_attachment(identifier: UUID):
+    with db() as cursor:
+        row = require(cursor,'attachments',identifier)
+    path=attachment_path(row['relative_path'])
+    if not path.is_file():
+        raise HTTPException(404,'附件文件未找到。')
+    inline=row['mime_type'] in ('image/png','image/jpeg','image/gif','image/webp','application/pdf')
+    return FileResponse(path,filename=row['original_name'],media_type=row['mime_type'],
+        content_disposition_type='inline' if inline else 'attachment',headers={'X-Content-Type-Options':'nosniff'})
+
 
 def export_material_record(identifier):
     with db() as cursor:

@@ -1,9 +1,13 @@
 import { t, msg, useLanguage, dateLocale, translateMessage } from "../i18n";
 import React from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import rehypeSlug from "rehype-slug";
+import { resolveSourceUrl } from "../services/markdownMedia";
 import { Link } from "react-router-dom";
 function MarkdownLink({
   href,
@@ -12,6 +16,7 @@ function MarkdownLink({
   ...props
 }) {
   useLanguage(); // Local reading links keep the router history, so readers can return to their task.
+  if (href?.startsWith('#')) return <a {...props} href={href}>{children}</a>;
   if (href) {
     try {
       const url = new URL(href, window.location.href);
@@ -55,12 +60,37 @@ export const COLORS = {
   task: "#819c5f"
 };
 export function Markdown({
-  children
+  children,
+  sourceUrl,
+  metadata
 }) {
   useLanguage();
   return <div className="markdown"><ReactMarkdown components={{
-      a: MarkdownLink
-    }} remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{children || t("*尚未添加内容*")}</ReactMarkdown></div>;
+      a: MarkdownLink,
+      img: MarkdownImage
+    }} urlTransform={(url, key) => {
+      if (url.startsWith('#') && !url.startsWith('#user-content-')) return '#user-content-' + url.slice(1);
+      return defaultUrlTransform(resolveSourceUrl(url, sourceUrl, metadata, key === 'src'));
+    }} remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema], [rehypeSlug, {prefix: 'user-content-'}], rehypeKatex]}>{children || t("*尚未添加内容*")}</ReactMarkdown></div>;
+}
+
+const markdownSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    '*': [...(defaultSchema.attributes['*'] || []), ['align', 'left', 'center', 'right']],
+    img: [...(defaultSchema.attributes.img || []), ['width', /^\d+%?$/], ['height', /^\d+%?$/]],
+    code: [...(defaultSchema.attributes.code || []), ['className', /^language-./, 'math-inline', 'math-display']],
+    details: [...(defaultSchema.attributes.details || []), 'open']
+  }
+};
+
+function MarkdownImage({node, src, alt, ...props}) {
+  useLanguage();
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => setFailed(false), [src]);
+  if (!src || failed) return <span className="image-unavailable" role="img" aria-label={t("media.unavailable", {alt: alt || t("media.imageAlt")})}>{t("media.unavailable", {alt: alt || t("media.imageAlt")})}</span>;
+  return <img {...props} src={src} alt={alt || t("media.imageAlt")} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />;
 }
 export function Badge({
   kind

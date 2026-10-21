@@ -11,8 +11,9 @@ export async function api(path, options = {}) {
   });
   if (!response.ok) {
     const result = await response.json().catch(() => ({}));
-    const error = new Error(typeof result.detail === "string" ? result.detail : msg("请求失败，请检查内容与服务状态。"));
+    const error = new Error(typeof result.detail === "string" ? result.detail : result.detail?.message || msg("请求失败，请检查内容与服务状态。"));
     error.status = response.status;
+    error.existingImport = result.detail?.existing_import;
     throw error;
   }
   return response.json();

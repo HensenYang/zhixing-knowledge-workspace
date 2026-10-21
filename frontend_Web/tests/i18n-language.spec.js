@@ -1,5 +1,63 @@
 import { test, expect } from '@playwright/test';
 
+test('LLM import follows document language and preserves original images until explicit confirmation', async({page})=>{
+  const calls=[];
+  const raw='## Original English paper\n\nOriginal method and findings.\n\n![Figure](import-asset://11111111-1111-4111-8111-111111111111)';
+  await page.route('**/api/**',route=>{
+    const request=route.request(),path=new URL(request.url()).pathname;
+    calls.push({path,body:request.method()==='POST'?request.postDataJSON():null});
+    const data=path.endsWith('/health')?{database:'ready'}:path.endsWith('/providers')?{mcp:{enabled:false}}:
+      path.endsWith('/preview')?{source_type:'mcp',source_key:'zotero:local:0:ABCD1234',title:'English paper',summary:'Original abstract',body_md:raw,suggested_kind:'resource',metadata:{import_provider:'zotero'},assets:[],preview_token:'a'.repeat(32)}:
+      path.endsWith('/analyze')?{language:'en',summary:'English findings',analysis_md:'## Methods\nEvidence-based English analysis.',provenance:{language:'en',model:'test',excerpted:true}}:
+      path.endsWith('/commit')?{id:'analyzed-note'}:[];
+    return route.fulfill({json:data});
+  });
+  await page.goto('/imports');
+  await page.getByLabel('资料地址',{exact:true}).fill('10.1234/paper');
+  await page.getByRole('button',{name:'提取并预览',exact:true}).click();
+  await page.getByRole('button',{name:'使用 LLM 解析',exact:true}).click();
+  const body=page.getByRole('textbox',{name:'Markdown 正文',exact:true});
+  await expect(body).toHaveValue(`## Methods\nEvidence-based English analysis.\n\n---\n\n${raw}`);
+  await expect(page.getByRole('textbox',{name:'摘要',exact:true})).toHaveValue('English findings');
+  expect(calls.filter(c=>c.path.endsWith('/commit'))).toHaveLength(0);
+  expect(calls.find(c=>c.path.endsWith('/analyze')).body.body_md).toBe(raw);
+  await page.getByRole('combobox',{name:'界面语言'}).selectOption('en');
+  await expect(page.getByRole('textbox',{name:'Summary',exact:true})).toHaveValue('English findings');
+  await expect(page.getByText('This text is long.',{exact:false})).toBeVisible();
+  await page.getByRole('button',{name:'Confirm and create knowledge object',exact:true}).click();
+  await expect(page.getByRole('link',{name:'Open imported material'})).toBeVisible();
+  const saved=calls.find(c=>c.path.endsWith('/commit')).body;
+  expect(saved.object.body_md).toContain(raw);
+  expect(saved.preview_token).toBe('a'.repeat(32));
+  expect(saved.object.metadata.llm_analysis.language).toBe('en');
+});
+
+test('a duplicate conflict links to the existing import and allows explicit separate-note saving',async({page})=>{
+  let commits=0,payload;
+  await page.route('**/api/**',route=>{
+    const request=route.request(),path=new URL(request.url()).pathname;
+    if(path.endsWith('/commit')){
+      commits++;payload=request.postDataJSON();
+      if(commits===1)return route.fulfill({status:409,json:{detail:{message:'该来源已经导入，请打开已有资料或选择另存笔记。',existing_import:{id:'existing-note',title:'Existing original',deleted_at:null}}}});
+      return route.fulfill({status:201,json:{id:'separate-note'}});
+    }
+    return route.fulfill({json:path.endsWith('/health')?{database:'ready'}:path.endsWith('/providers')?{mcp:{enabled:false}}:path.endsWith('/preview')?{source_type:'mcp',source_key:'zotero:local:0:ABCD1234',title:'Draft paper',summary:'',body_md:'Preserved draft',suggested_kind:'resource',metadata:{},assets:[]}:[]});
+  });
+  await page.goto('/imports');
+  await page.getByLabel('资料地址',{exact:true}).fill('10.1234/paper');
+  await page.getByRole('button',{name:'提取并预览',exact:true}).click();
+  await page.getByRole('button',{name:'确认并创建知识对象',exact:true}).click();
+  await expect(page.getByRole('link',{name:'Existing original'})).toHaveAttribute('href','/knowledge/existing-note');
+  await expect(page.getByRole('button',{name:'确认并创建知识对象',exact:true})).toBeDisabled();
+  await page.getByRole('combobox',{name:'界面语言'}).selectOption('en');
+  await expect(page.getByText('This source is already imported. Open the existing material or save a separate note.',{exact:true})).toBeVisible();
+  await expect(page.getByRole('textbox',{name:'Markdown body',exact:true})).toHaveValue('Preserved draft');
+  await page.getByRole('checkbox',{name:'Save as a separate note',exact:false}).check();
+  await page.getByRole('button',{name:'Confirm and save separate note'}).click();
+  await expect(page.getByRole('link',{name:'Open imported material'})).toHaveAttribute('href','/knowledge/separate-note');
+  expect(payload.save_as_note).toBe(true);
+});
+
 const note = {
   id: 'note-a', title: '保留用户的中文标题', kind: 'model', summary: '用户填写的摘要',
   body_md: '# 用户的原始笔记\n\n公式 $a_t = \\pi(o_t)$', source_url: '',
@@ -168,4 +226,88 @@ test('learning path drafts and share pages preserve content when switching langu
   await page.getByRole('combobox', { name: 'Interface language' }).selectOption('zh');
   await expect(page.getByRole('heading', { name: '学习目标', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: path.title })).toBeVisible();
+});
+
+test('Zotero search and preview preserve original material across languages and only import after confirmation', async ({ page }) => {
+  await mockWorkspace(page);
+  const calls = [];
+  const preview = {
+    source_type: 'mcp', source_key: 'zotero:local:0:ABCD1234', source_url: 'https://example.org/paper',
+    title: '本机 Zotero 文献原题', summary: '原始摘要', body_md: '## Document Content\n原始全文内容',
+    suggested_kind: 'resource', tags: ['用户标签'], metadata: { import_provider: 'zotero', zotero_item_key: 'ABCD1234', fulltext_included: true },
+    warnings: [], possible_duplicates: []
+  };
+  await page.route('**/api/source-imports/**', route => {
+    const request = route.request(), url = new URL(request.url());
+    const payload = request.method() === 'POST' ? request.postDataJSON() : null;
+    calls.push({ path: url.pathname, payload });
+    const data = url.pathname.endsWith('/providers') ? { zotero: { enabled: true, configured: true }, mcp: { enabled: false } }
+      : url.pathname.endsWith('/zotero/search') ? { items: [{ item_key: 'ABCD1234', title: preview.title, authors: 'Wang, A', date: '2026' }] }
+      : url.pathname.endsWith('/zotero/preview') ? preview : { id: 'imported-zotero' };
+    return route.fulfill({ json: data });
+  });
+  await page.goto('/imports');
+  await page.getByLabel('来源类型').selectOption('zotero');
+  await expect(page.getByRole('button', { name: '搜索 Zotero 文献' })).toBeDisabled();
+  await page.getByRole('textbox', { name: 'Zotero 搜索词' }).fill('用户搜索词');
+  await page.getByLabel('搜索范围', { exact: true }).selectOption('everything');
+  await page.getByLabel('筛选标签（可选）').fill('用户标签');
+  await page.getByRole('button', { name: '搜索 Zotero 文献' }).click();
+  await expect(page.locator('.zotero-results')).toContainText(preview.title);
+  expect(calls.filter(call => call.path.endsWith('/zotero/preview'))).toHaveLength(0);
+  await page.getByRole('combobox', { name: '界面语言' }).selectOption('en');
+  await expect(page.getByRole('textbox', { name: 'Zotero search query' })).toHaveValue('用户搜索词');
+  await expect(page.getByLabel('Tag filter (optional)')).toHaveValue('用户标签');
+  await expect(page.getByLabel('Search scope', { exact: true })).toHaveValue('everything');
+  await page.getByRole('button', { name: `Preview item: ${preview.title}` }).click();
+  await expect(page.getByRole('textbox', { name: 'Markdown body' })).toHaveValue(preview.body_md);
+  await page.getByRole('textbox', { name: 'Title', exact: true }).fill('手动编辑的文献标题');
+  expect(calls.some(call => call.path.endsWith('/commit'))).toBe(false);
+  await page.getByRole('combobox', { name: 'Interface language' }).selectOption('zh');
+  await expect(page.getByRole('textbox', { name: '标题', exact: true })).toHaveValue('手动编辑的文献标题');
+  await expect(page.getByRole('textbox', { name: 'Markdown 正文' })).toHaveValue(preview.body_md);
+  await page.getByRole('button', { name: '确认并创建知识对象' }).click();
+  await expect(page.getByRole('link', { name: '打开已导入资料' })).toHaveAttribute('href', '/knowledge/imported-zotero');
+  const confirmation = calls.find(call => call.path.endsWith('/commit')).payload;
+  expect(confirmation.source_type).toBe('mcp');
+  expect(confirmation.source_key).toBe(preview.source_key);
+  expect(confirmation.object.title).toBe('手动编辑的文献标题');
+  expect(confirmation.object.body_md).toBe(preview.body_md);
+  expect(calls.find(call => call.path.endsWith('/zotero/search')).payload).toMatchObject({ query: '用户搜索词', qmode: 'everything', tag: '用户标签' });
+});
+
+test('Zotero search errors, empty results, metadata-only mode and full-text warnings stay bilingual', async ({ page }) => {
+  await mockWorkspace(page);
+  let attempt = 0, previewRequest;
+  await page.route('**/api/source-imports/providers', route => route.fulfill({ json: { zotero: { enabled: true, configured: true } } }));
+  await page.route('**/api/source-imports/zotero/search', route => {
+    attempt++;
+    if (attempt === 1) return route.fulfill({ status: 504, json: { detail: 'Zotero MCP 响应超时，请确认 Zotero 已打开后重试。' } });
+    return route.fulfill({ json: { items: attempt === 2 ? [] : [{ item_key: 'ABCD1234', title: '保留的文献标题', authors: '', date: '' }] } });
+  });
+  await page.route('**/api/source-imports/zotero/preview', route => {
+    previewRequest = route.request().postDataJSON();
+    return route.fulfill({ json: {
+      source_type: 'mcp', source_key: 'zotero:local:0:ABCD1234', title: '保留的文献标题', summary: '', body_md: '原始元数据',
+      suggested_kind: 'resource', tags: [], metadata: { import_provider: 'zotero' }, possible_duplicates: [],
+      warnings: ['未读取到 Zotero 全文；请检查附件是否已下载并完成全文索引。当前预览保留元数据。']
+    } });
+  });
+  await page.goto('/imports');
+  await page.getByLabel('来源类型').selectOption('zotero');
+  await page.getByRole('textbox', { name: 'Zotero 搜索词' }).fill('机器人');
+  await page.getByRole('button', { name: '搜索 Zotero 文献' }).click();
+  await expect(page.getByRole('alert')).toContainText('Zotero MCP 响应超时');
+  await page.getByRole('combobox', { name: '界面语言' }).selectOption('en');
+  await expect(page.getByRole('alert')).toContainText('Zotero MCP timed out.');
+  await page.getByRole('button', { name: 'Search Zotero library' }).click();
+  await expect(page.getByRole('status')).toContainText('No matching items found.');
+  await page.getByRole('button', { name: 'Search Zotero library' }).click();
+  await page.getByLabel('Include indexed full text in the preview when available').uncheck();
+  await page.getByRole('button', { name: 'Preview item: 保留的文献标题' }).click();
+  expect(previewRequest.include_fulltext).toBe(false);
+  await expect(page.locator('.warning-box')).toContainText('No Zotero full text was available.');
+  await page.getByRole('combobox', { name: 'Interface language' }).selectOption('zh');
+  await expect(page.locator('.warning-box')).toContainText('未读取到 Zotero 全文');
+  await expect(page.getByRole('textbox', { name: 'Markdown 正文' })).toHaveValue('原始元数据');
 });
