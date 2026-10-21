@@ -15,6 +15,8 @@ test.beforeEach(async ({page}) => {
     const url = new URL(route.request().url());
     let data = [];
     if (url.pathname === '/api/health') data = {database: 'ready'};
+    else if (url.pathname === '/api/auth/me') data = {id:'mock-user',email:'reader@example.test',display_name:'阅读测试',workspaces:[{id:'mock-workspace',name:'阅读测试空间',role:'owner'}]};
+    else if (url.pathname === '/api/comments' || url.pathname === '/api/reviews') data = [];
     else if (url.pathname === '/api/objects') data = objects;
     else if (url.pathname === '/api/relations') data = relations;
     else if (url.pathname === '/api/graph') data = {nodes: objects, edges: relations};

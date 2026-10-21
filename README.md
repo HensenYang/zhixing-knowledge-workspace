@@ -10,11 +10,25 @@ A relationship-driven knowledge workspace for scientific communication and educa
 - 带类型及证据的知识关系、全局图谱和可编辑画布。
 - 沿关系阅读：前置基座、方法应用、证据与横向比较；局部图跟随阅读位置并突出访问路径。
 - 学习日志、待运行及已运行实验、附件、回收站、ZIP备份恢复。
+- 用户登录、多人工作区、owner/editor/reviewer/viewer 权限、评论、版本审核和团队活动记录。
 
 ## 技术结构
 
 React 18 / Vite 5 / Tailwind CSS，Cytoscape图谱与React Flow画布；Python / FastAPI；PostgreSQL。
-前端地址 http://127.0.0.1:5174/ ，后端端口8001。默认仅监听本机，当前为个人使用版本；每位协作者独立运行，不自动同步修改。
+前端地址 http://127.0.0.1:5174/ ，后端端口8001。首次打开时创建管理员账号；第一个账号会接管迁移前已有的本地资料。
+
+## 多人协作
+
+数据库迁移至 V003 后，内容按工作区隔离。所有者可在“团队协作”页面把已经注册的用户按邮箱加入当前工作区，并分配以下角色：
+
+- owner：管理成员、编辑、评论和审核；
+- editor：编辑内容、评论并提交版本审核；
+- reviewer：只读内容、评论并批准或要求修改；
+- viewer：只读内容和评论。
+
+对象和画布继续使用版本号进行乐观并发控制；发生冲突时返回 409 并保留 IndexedDB 草稿，不会静默覆盖他人修改。备份只包含当前工作区的知识内容，不导出账号、密码、会话和成员权限。
+
+远程部署必须由同一 HTTPS 域名提供前端与 `/api`，并设置 `COOKIE_SECURE=true`。PostgreSQL 不应暴露到公网，附件目录必须使用持久存储并纳入备份。本地开发保持 `COOKIE_SECURE=false`。
 
 ## 本机启动（Windows）
 
@@ -62,7 +76,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\stop.ps1
 - IndexedDB：未提交草稿；sessionStorage：当前标签页的阅读路径。
 - `.env.example`：仅配置格式示例，不含真实凭据。
 
-分享仓库或邀请协作者时请保持GitHub仓库为Private。多人同时访问的远程部署需另行设计身份验证、权限与同步。
+分享仓库或邀请协作者时请保持GitHub仓库为 Private。远程部署还需配置 HTTPS、持久附件存储、数据库备份和反向代理；当前版本使用版本冲突检测，不提供逐字实时共同编辑。
 
 ## 开发与验证
 

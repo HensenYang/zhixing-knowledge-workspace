@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Routes, Route, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, BookOpen, Network, PanelsTopLeft, Route as RouteIcon, FlaskConical, Settings as SettingsIcon, Search, Menu, Leaf, Archive as ArchiveIcon } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Network, PanelsTopLeft, Route as RouteIcon, FlaskConical, Settings as SettingsIcon, Search, Menu, Leaf, Archive as ArchiveIcon, Users, LogOut } from 'lucide-react';
 import { api } from './services/api';
+import { useAuth } from './contexts/AuthContext';
+import AuthScreen from './components/AuthScreen';
 import Home from './pages/Home';
 import Trash from './pages/Trash';
 import { TrashNotice } from './components/RecordActions';
@@ -11,8 +13,16 @@ import { CanvasList, CanvasEditor } from './pages/Canvas';
 import Timeline from './pages/Timeline';
 import Experiments from './pages/Experiments';
 import Settings from './pages/Settings';
-const navigation = [['/', LayoutDashboard, '工作台'], ['/knowledge', BookOpen, '知识与资料'], ['/graph', Network, '知识图谱'], ['/canvases', PanelsTopLeft, '自由画布'], ['/timeline', RouteIcon, '学习轨迹'], ['/experiments', FlaskConical, '实验与复现'], ['/trash', ArchiveIcon, '回收站'], ['/settings', SettingsIcon, '环境与备份']];
+import Collaboration from './pages/Collaboration';
+const navigation = [['/', LayoutDashboard, '工作台'], ['/knowledge', BookOpen, '知识与资料'], ['/graph', Network, '知识图谱'], ['/canvases', PanelsTopLeft, '自由画布'], ['/timeline', RouteIcon, '学习轨迹'], ['/experiments', FlaskConical, '实验与复现'], ['/collaboration', Users, '团队协作'], ['/trash', ArchiveIcon, '回收站'], ['/settings', SettingsIcon, '环境与备份']];
 export default function App() {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="empty">正在连接协作空间…</div>;
+  return user ? <WorkspaceApp /> : <AuthScreen />;
+}
+function WorkspaceApp() {
+  const { user, workspace, logout } = useAuth();
+  const lastActivity = useRef(null);
   const [health, setHealth] = useState(null),
     [q, setQ] = useState(''),
     [results, setResults] = useState([]),
@@ -40,8 +50,21 @@ export default function App() {
       clearTimeout(timer);
     };
   }, [q]);
-  return <div className="app-shell"><aside className={`sidebar ${menu ? 'open' : ''}`}><div className="brand"><div className="brand-mark"><Leaf size={23} /></div><div><strong>知行 · Embodied</strong><span>个人研究工作台</span></div></div><span className="nav-label">WORKSPACE</span><nav>{navigation.map(([path, Icon, label]) => <NavLink key={path} to={path} end={path === '/'} onClick={() => setMenu(false)}><Icon size={18} /><span>{label}</span></NavLink>)}</nav><div className="sidebar-bottom"><span className="eyebrow">RESEARCH FOCUS</span><p>机器人操作<br />VLA · 世界模型</p><div className="local-indicator"><i />本地存储 · 个人使用</div></div></aside><div className="main-shell"><header className="topbar"><button className="mobile-toggle ghost" aria-label="展开导航" onClick={() => setMenu(!menu)}><Menu size={19} /></button><div className="global-search"><Search size={16} /><input aria-label="全局搜索" placeholder="搜索知识、代码与问题…" value={q} onChange={e => setQ(e.target.value)} />{q && <div className="search-results">{results.length ? results.map(o => <button key={o.id} onClick={() => {
+  useEffect(() => {
+    let alive = true;
+    const check = () => api('/activity?limit=1').then(rows => {
+      const latest = rows[0]?.id || 0;
+      if (alive && lastActivity.current !== null && latest !== lastActivity.current) {
+        window.dispatchEvent(new Event('workspace-changed'));
+      }
+      lastActivity.current = latest;
+    }).catch(() => {});
+    check();
+    const timer = setInterval(check, 5000);
+    return () => { alive = false; clearInterval(timer); };
+  }, [workspace?.id]);
+  return <div className="app-shell"><aside className={`sidebar ${menu ? 'open' : ''}`}><div className="brand"><div className="brand-mark"><Leaf size={23} /></div><div><strong>知行 · Embodied</strong><span>团队研究工作台</span></div></div><label className="workspace-switcher"><span className="nav-label">WORKSPACE</span><select value={workspace?.id || ''} onChange={e => { localStorage.setItem('knowledge-workspace-id', e.target.value); window.location.assign('/'); }}>{user.workspaces.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label><nav>{navigation.map(([path, Icon, label]) => <NavLink key={path} to={path} end={path === '/'} onClick={() => setMenu(false)}><Icon size={18} /><span>{label}</span></NavLink>)}</nav><div className="sidebar-bottom"><span className="eyebrow">SIGNED IN</span><p>{user.display_name}<br />{user.email}</p><div className="local-indicator"><i />团队数据库 · {workspace?.role}</div><button className="ghost logout-button" onClick={logout}><LogOut size={14} />退出登录</button></div></aside><div className="main-shell"><header className="topbar"><button className="mobile-toggle ghost" aria-label="展开导航" onClick={() => setMenu(!menu)}><Menu size={19} /></button><div className="global-search"><Search size={16} /><input aria-label="全局搜索" placeholder="搜索知识、代码与问题…" value={q} onChange={e => setQ(e.target.value)} />{q && <div className="search-results">{results.length ? results.map(o => <button key={o.id} onClick={() => {
               navigate(`/knowledge/${o.id}`);
               setQ('');
-            }}>{o.title}</button>) : <p>没有匹配内容</p>}</div>}</div><div className="topbar-status"><i className={health?.database === 'ready' ? 'ready' : ''} />{health?.database === 'ready' ? 'PostgreSQL 已连接' : '数据库待配置'}</div><span className="avatar">研</span></header>{health && health.database !== 'ready' && <div className="connection-banner">后端已启动，数据库尚未就绪。运行本地初始化脚本后即可保存内容。<NavLink to="/settings">查看设置 ↗</NavLink></div>}<main><Routes><Route path="/" element={<Home />} /><Route path="/knowledge" element={<KnowledgeList />} /><Route path="/knowledge/:id" element={<KnowledgeDetail />} /><Route path="/graph" element={<Graph />} /><Route path="/canvases" element={<CanvasList />} /><Route path="/canvases/:id" element={<CanvasEditor />} /><Route path="/timeline" element={<Timeline />} /><Route path="/experiments" element={<Experiments />} /><Route path="/trash" element={<Trash />} /><Route path="/settings" element={<Settings />} /><Route path="*" element={<div className="empty">页面不存在，请从左侧导航继续。</div>} /></Routes></main><TrashNotice /></div></div>;
+            }}>{o.title}</button>) : <p>没有匹配内容</p>}</div>}</div><div className="topbar-status"><i className={health?.database === 'ready' ? 'ready' : ''} />{health?.database === 'ready' ? '协作数据库已连接' : '数据库待配置'}</div><span className="avatar">{user.display_name.slice(0, 1)}</span></header>{health && health.database !== 'ready' && <div className="connection-banner">后端已启动，数据库尚未就绪。请运行最新迁移。<NavLink to="/settings">查看设置 ↗</NavLink></div>}<main><Routes><Route path="/" element={<Home />} /><Route path="/knowledge" element={<KnowledgeList />} /><Route path="/knowledge/:id" element={<KnowledgeDetail />} /><Route path="/graph" element={<Graph />} /><Route path="/canvases" element={<CanvasList />} /><Route path="/canvases/:id" element={<CanvasEditor />} /><Route path="/timeline" element={<Timeline />} /><Route path="/experiments" element={<Experiments />} /><Route path="/collaboration" element={<Collaboration />} /><Route path="/trash" element={<Trash />} /><Route path="/settings" element={<Settings />} /><Route path="*" element={<div className="empty">页面不存在，请从左侧导航继续。</div>} /></Routes></main><TrashNotice /></div></div>;
 }

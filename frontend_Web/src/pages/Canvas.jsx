@@ -6,6 +6,7 @@ import { api, write } from '../services/api';
 import useDraft from '../hooks/useDraft';
 import { PageTitle, Field, Badge, Empty, ErrorBox, RELATIONS } from '../components/shared';
 import { DeleteButton, useWorkspaceChanges } from '../components/RecordActions';
+import CollaborationPanel from '../components/CollaborationPanel';
 export function CanvasList() {
   const [canvases, setCanvases] = useState([]),
     [title, setTitle] = useState(''),
@@ -475,5 +476,5 @@ function CanvasEditorInner({
               version: doc.version
             });
             setHistory(null);
-          }}>版本 {r.version} · 恢复到草稿</button>)}</div>}</aside></div></div>;
+          }}>版本 {r.version} · 恢复到草稿</button>)}</div>}</aside></div><CollaborationPanel targetType="canvas" targetId={id} version={doc.version} /></div>;
 }
