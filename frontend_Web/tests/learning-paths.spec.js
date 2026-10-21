@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+const authenticatedUser = {"id":"40000000-0000-4000-8000-000000000001","email":"test@example.test","display_name":"Test user","workspaces":[{"id":"40000000-0000-4000-8000-000000000002","name":"Test workspace","role":"owner"}]};
 
 const object={id:'00000000-0000-4000-8000-000000000001',title:'VLA 基础',summary:'理解视觉、语言与动作的联合建模。',kind:'concept'};
 const draft={
@@ -11,7 +12,8 @@ test('learning path can be composed, published and viewed read-only',async({page
   await page.route('**/api/**',async route=>{
     const request=route.request(), url=new URL(request.url());
     let data;
-    if(url.pathname==='/api/health') data={service:'ready',database:'ready',schema_version:'V004'};
+    if(url.pathname==='/api/auth/me') data=authenticatedUser;
+    else if(url.pathname==='/api/health') data={service:'ready',database:'ready',schema_version:'V004'};
     else if(url.pathname==='/api/objects') data=[object];
     else if(url.pathname===`/api/learning-paths/${draft.id}` && request.method()==='GET') data=saved;
     else if(url.pathname===`/api/learning-paths/${draft.id}` && request.method()==='PUT') {

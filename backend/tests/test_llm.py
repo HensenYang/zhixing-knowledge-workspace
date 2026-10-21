@@ -4,8 +4,8 @@ import json
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from fastapi import FastAPI
 
-from backend.app import app
 from backend import llm
 
 REAL_ASYNC_CLIENT = httpx.AsyncClient
@@ -29,6 +29,10 @@ def configured(monkeypatch):
 
 @pytest.fixture
 def client():
+    # Exercise the model router contract without application auth/database middleware.
+    # Authenticated application access is covered by test_workspace.py.
+    app = FastAPI()
+    app.include_router(llm.router)
     with TestClient(app) as client:
         yield client
 

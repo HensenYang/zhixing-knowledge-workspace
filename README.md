@@ -156,6 +156,12 @@ For a new database, you can optionally import the case study with these scripts.
 
 Keep the local services running while importing. You can also restore a backup you own into an empty database through **Environment & Backup** (“环境与备份”). Existing records are not overwritten when IDs conflict.
 
+## Portable learning artifacts
+
+Saved learning paths can be previewed as interactive knowledge graphs with objectives, ordered steps, sources, and relationship evidence. Download a standalone HTML artifact for offline use or a JSON package for exchange. Both formats can be previewed at `/artifacts` and explicitly imported as independent workspace copies.
+
+[Artifact sharing and import guide](docs/learning-path-artifacts.md)
+
 ## Scientific communication and education
 
 The project focuses on source traceability, conceptual connections, and revisitable learning paths. The hackathon goal is to demonstrate research explanations and teaching scenarios across disciplines using the existing prototype, evaluating evidence traceability, explanation clarity, and navigation.

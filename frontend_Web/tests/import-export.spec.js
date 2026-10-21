@@ -2,6 +2,7 @@ import {test, expect} from '@playwright/test';
 
 test('source import previews editable metadata and commits after confirmation', async ({page}) => {
   await page.route('**/api/**', async route => {
+    if (new URL(route.request().url()).pathname === '/api/auth/me') return route.fulfill({json:{id:'mock-user',email:'test@example.test',display_name:'Test user',workspaces:[{id:'mock-workspace',name:'Test workspace',role:'owner'}]}});
     const url = new URL(route.request().url());
     let data = null;
     if (url.pathname === '/api/health') data = {service: 'ready', database: 'ready', schema_version: 'V003'};

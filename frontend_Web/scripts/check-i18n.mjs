@@ -15,7 +15,7 @@ for (const key of new Set([...Object.keys(catalogs.zh), ...Object.keys(catalogs.
   if (catalogs.zh[key] && catalogs.en[key] && placeholders(catalogs.zh[key]) !== placeholders(catalogs.en[key])) {
     errors.push(`Placeholder mismatch: ${key}`);
   }
-  if (key !== '中文' && /[\u3400-\u9fff]/.test(catalogs.en[key] || '')) errors.push(`Untranslated English entry: ${key}`);
+  if (!['中文', 'artifact.chinese'].includes(key) && /[\u3400-\u9fff]/.test(catalogs.en[key] || '')) errors.push(`Untranslated English entry: ${key}`);
 }
 
 const technicalText = new Set(['PostgreSQL', 'API Key', 'commit:', 'KB', 'https://…']);
@@ -24,7 +24,7 @@ function check(node, ancestors, file) {
   if (!node || typeof node !== 'object') return;
   const parent = ancestors.at(-1);
   const location = `${file}:${node.loc?.start.line || 1}`;
-  const messageCall = node.type === 'CallExpression' && ['t', 'msg'].includes(node.callee?.name);
+  const messageCall = node.type === 'CallExpression' && ['t', 'msg', 'tr'].includes(node.callee?.name);
   if (messageCall && node.arguments[0]?.type === 'StringLiteral') {
     const key = node.arguments[0].value;
     if (!Object.hasOwn(catalogs.zh, key) || !Object.hasOwn(catalogs.en, key)) errors.push(`${location}: unknown message ${key}`);
@@ -38,7 +38,7 @@ function check(node, ancestors, file) {
     errors.push(`${location}: translate the ${node.name.name} attribute`);
   }
   if (node.type === 'StringLiteral' && /[\u3400-\u9fff]/.test(node.value)) {
-    const marked = parent?.type === 'CallExpression' && ['t', 'msg'].includes(parent.callee?.name) && parent.arguments[0] === node;
+    const marked = parent?.type === 'CallExpression' && ['t', 'msg', 'tr'].includes(parent.callee?.name) && parent.arguments[0] === node;
     if (!marked) errors.push(`${location}: unmarked Chinese string ${node.value}`);
   }
   if (node.type === 'TemplateLiteral' && node.quasis.some(part => /[\u3400-\u9fff]/.test(part.value.cooked || ''))) {

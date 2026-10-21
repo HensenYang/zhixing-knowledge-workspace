@@ -86,6 +86,35 @@ def test_unicode_search_revision_conflict_archive(client):
     assert client.patch(f"/api/objects/{item['id']}",json=restored).status_code==200
     assert len(client.get('/api/objects').json())==1
 
+
+def test_source_import_uniqueness_is_scoped_to_each_workspace(client):
+    payload={'source_type':'mcp','source_key':'zotero:local:0:SAME1234',
+             'object':{'kind':'resource','title':'Owner material','body_md':'Owner original body'}}
+    first=client.post('/api/source-imports/commit',json=payload)
+    assert first.status_code==201,first.text
+    original=first.json()
+    assert client.post('/api/source-imports/commit',json=payload).status_code==409
+    registered=client.post('/api/auth/register',json={
+        'email':'separate-workspace@example.test','display_name':'Independent workspace','password':'test-password-789'})
+    assert registered.status_code==201,registered.text
+    assert client.get('/api/objects').json()==[]
+    second=client.post('/api/source-imports/commit',json={**payload,'object':{**payload['object'],'title':'Second workspace material'}})
+    assert second.status_code==201,second.text
+    assert second.json()['id']!=original['id']
+    assert client.get(f"/api/objects/{original['id']}").status_code==404
+    assert client.post('/api/auth/login',json={'email':'owner@example.test','password':'test-password-123'}).status_code==200
+    stored=client.get(f"/api/objects/{original['id']}").json()
+    assert stored['title']=='Owner material' and stored['body_md']=='Owner original body'
+    assert client.get(f"/api/objects/{second.json()['id']}").status_code==404
+
+
+def test_private_import_and_model_handlers_require_authentication(client):
+    client.cookies.clear()
+    assert client.get('/api/source-imports/providers').status_code==401
+    assert client.post('/api/source-imports/analyze',json={'title':'Test','body_md':'Original text'}).status_code==401
+    assert client.get('/api/llm/status').status_code==401
+    assert client.post('/api/llm/test').status_code==401
+
 def test_relation_evidence_undirected_uniqueness_graph(client):
     a,b=create(client,'VLA'),create(client,'动作表示')
     data={'source_id':a['id'],'target_id':b['id'],'relation_type':'compares_with','evidence':[{'evidence_object_id':b['id'],'locator':'第 2 节'}]}
@@ -174,6 +203,40 @@ def test_learning_path_publish_share_and_revoke(client):
     assert client.delete(f"/api/learning-paths/{path['id']}").status_code==200
     assert any(row['kind']=='path' for row in client.get('/api/trash').json())
     assert client.post(f"/api/trash/path/{path['id']}/restore").status_code==200
+
+
+def test_learning_path_artifact_copy_roundtrip_privacy_and_workspace_isolation(client):
+    a, b = create(client, 'Artifact concept'), create(client, 'Artifact paper', 'resource')
+    relation = client.post('/api/relations', json={'source_id': a['id'], 'target_id': b['id'],
+        'relation_type': 'uses', 'evidence': [{'evidence_object_id': b['id'], 'source_url': 'https://example.org', 'locator': 'p. 3'}]})
+    assert relation.status_code == 201, relation.text
+    original = client.post('/api/learning-paths', json={'title': 'Portable path', 'objective_md': 'Explain',
+        'completion_criteria_md': 'Demonstrate', 'steps': [{'title': obj['title'], 'object_id': obj['id'],
+            'completion_criteria_md': 'Explain independently'} for obj in (a, b)]}).json()
+    summary = client.get(f"/api/learning-paths/{original['id']}/artifact").json()
+    assert all(obj['body_md'] == '' for obj in summary['objects'])
+    full = client.get(f"/api/learning-paths/{original['id']}/artifact?include_body=true")
+    assert full.status_code == 200, full.text
+    artifact = full.json()
+    assert artifact['objects'][0]['body_md'] == a['body_md']
+    imported = client.post('/api/learning-paths/import', files={'file': ('path.json', json.dumps(artifact).encode(), 'application/json')})
+    assert imported.status_code == 201, imported.text
+    copied = imported.json()
+    assert copied['id'] != original['id'] and copied['status'] == 'draft' and copied['share_token'] is None
+    assert {step['object_id'] for step in copied['steps']}.isdisjoint({a['id'], b['id']})
+    assert len(client.get('/api/relations').json()) == 2
+    assert client.get(f"/api/objects/{a['id']}").json()['body_md'] == a['body_md']
+    published = client.post(f"/api/learning-paths/{original['id']}/publish").json()
+    shared = client.get(f"/api/shared/learning-paths/{published['share_token']}").json()
+    assert 'workspace_id' not in shared and 'created_by' not in shared and 'share_token' not in shared
+    assert len(shared['artifact']['relations']) == 1
+    assert shared['artifact']['relations'][0]['evidence'][0]['locator'] == 'p. 3'
+    invalid = {**artifact, 'relations': [{**artifact['relations'][0], 'target_id': str(uuid4())}]}
+    before = len(client.get('/api/objects').json())
+    assert client.post('/api/learning-paths/import', files={'file': ('bad.json', json.dumps(invalid).encode())}).status_code == 422
+    assert len(client.get('/api/objects').json()) == before
+    denied = client.get(f"/api/learning-paths/{original['id']}/artifact", headers={'X-Workspace-ID': str(uuid4())})
+    assert denied.status_code == 403
 
 def test_backup_complete_roundtrip_and_conflict(client,monkeypatch,tmp_path):
     a,b=create(client,'模型'),create(client,'论文','resource')

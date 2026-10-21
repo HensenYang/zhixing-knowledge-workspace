@@ -69,3 +69,6 @@
 .activity-list>div{display:grid;grid-template-columns:120px 1fr auto;gap:10px;padding:10px 0;border-bottom:1px solid #edf1e9;font-size:11px}.activity-list span{overflow-wrap:anywhere}
 .canvas-editor-page>.collaboration-panel{max-width:760px;margin:20px 0 0 auto}
 .conflict-panel{margin-bottom:20px;border-color:#dfbd82;background:#fffdf7}.conflict-panel>p{font-size:12px}.conflict-field{display:grid;grid-template-columns:80px minmax(0,1fr) auto;gap:12px;align-items:start;padding:10px 0;border-top:1px solid #eee7d7}.conflict-field pre{margin:0;max-height:130px;white-space:pre-wrap}.conflict-field button{font-size:10px;padding:5px 8px}
+
+/* Portable learning artifacts and file exchange. */
+.artifact-page-toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:24px}.artifact-transfer-panel{margin:20px 0 28px}.artifact-transfer-panel .check{display:flex;align-items:center;gap:8px}.artifact-transfer-panel .check input{width:auto}.artifact-transfer-panel>.path-artifact-view{margin-top:20px}.artifact-list-actions{margin-bottom:20px}.artifact-import-page{max-width:1240px}.artifact-transfer-panel .actions{flex-wrap:wrap}.artifact-transfer-panel .file-upload input{max-width:100%}

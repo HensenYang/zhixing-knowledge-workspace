@@ -9,6 +9,7 @@ test('PDF preview shows staged images and confirms one atomic import without dup
   const assets=[{id:imageId,filename:'page-1-image.png',mime_type:'image/png',kind:'image',page:1,preview_url:`/api/source-imports/assets/${token}/${imageId}`},
     {id:fileId,filename:'original.pdf',mime_type:'application/pdf',kind:'source',page:null,preview_url:`/api/source-imports/assets/${token}/${fileId}`}];
   await page.route('**/api/**',route=>{
+    if (new URL(route.request().url()).pathname === '/api/auth/me') return route.fulfill({json:{id:'mock-user',email:'test@example.test',display_name:'Test user',workspaces:[{id:'mock-workspace',name:'Test workspace',role:'owner'}]}});
     const request=route.request(),path=new URL(request.url()).pathname;
     calls.push({path,method:request.method(),body:path.endsWith('/commit')?request.postDataJSON():null});
     if(path.includes('/assets/'))return route.fulfill({contentType:'image/png',body:png});
@@ -61,6 +62,7 @@ Formula $a_t = \\pi(o_t)$.
   let writes=0;
   await page.route('**/raw.githubusercontent.com/**',route=>route.fulfill({contentType:'image/png',body:png}));
   await page.route('**/api/**',route=>{
+    if (new URL(route.request().url()).pathname === '/api/auth/me') return route.fulfill({json:{id:'mock-user',email:'test@example.test',display_name:'Test user',workspaces:[{id:'mock-workspace',name:'Test workspace',role:'owner'}]}});
     const request=route.request(),path=new URL(request.url()).pathname;
     if(request.method()!=='GET')writes++;
     const data=path==='/api/health'?{database:'ready',service:'ready'}:path==='/api/objects/html-note'?note:path==='/api/objects'?[note]:path==='/api/graph'?{nodes:[note],edges:[]}:[];

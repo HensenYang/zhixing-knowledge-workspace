@@ -2,10 +2,12 @@ import LanguageSwitch from "../components/LanguageSwitch";
 import { t, msg, useLanguage, translateMessage } from "../i18n";
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, ChevronUp, Clock, Copy, ExternalLink, ListOrdered, Plus, Save, Share2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, Clock, Copy, Download, ExternalLink, Eye, ListOrdered, Plus, Save, Share2 } from 'lucide-react';
 import { api, write } from '../services/api';
 import { Badge, Empty, ErrorBox, Field, Markdown, PageTitle } from '../components/shared';
 import { DeleteButton, announceChange, useWorkspaceChanges } from '../components/RecordActions';
+import PathArtifactView, { artifactCatalogs } from '../components/PathArtifactView';
+import { validatePathArtifact, downloadArtifact } from '../services/pathArtifacts';
 const blankPath = title => ({
   title,
   objective_md: '',
@@ -42,6 +44,7 @@ export function LearningPathList() {
   }
   return <>
     <PageTitle eyebrow={t("RESEARCH LEARNING PATHS")} title={t("研究学习路径")}>{t("把知识对象编排为有目标、有顺序、有完成条件的研究讲解路径。")}</PageTitle>
+    <div className="actions artifact-list-actions"><Link className="button ghost" to="/artifacts">{t('artifact.importTitle')}</Link></div>
     <form className="toolbar path-create" onSubmit={create}>
       <input aria-label={t("新学习路径名称")} value={title} onChange={e => setTitle(e.target.value)} placeholder={t("例如：从 VLA 基础到完成一次模型复现")} />
       <button disabled={creating || !title.trim()}><Plus size={16} />{creating ? t("创建中…") : t("新建学习路径")}</button>
@@ -62,7 +65,7 @@ export function LearningPathList() {
   </>;
 }
 export function LearningPathEditor() {
-  useLanguage();
+  const language = useLanguage();
   const {
       id
     } = useParams(),
@@ -80,6 +83,9 @@ export function LearningPathEditor() {
       setSelectedObject(items[0]?.id || '');
     }).catch(e => setError(e.message));
   }, [id]);
+  const [artifact, setArtifact] = useState(null);
+  const [includeBody, setIncludeBody] = useState(false);
+  const [artifactBusy, setArtifactBusy] = useState(false);
   const change = (key, value) => setDoc(current => ({
     ...current,
     [key]: value
@@ -214,18 +220,41 @@ export function LearningPathEditor() {
       window.prompt(t("复制这个分享链接："), url);
     }
   }
+  async function previewArtifact() {
+    setArtifact(null); setArtifactBusy(true); setError('');
+    try {
+      const saved = await save();
+      if (!saved) return;
+      const snapshot = await api(`/learning-paths/${id}/artifact?include_body=${includeBody}`);
+      setArtifact(validatePathArtifact(snapshot));
+    } catch (failure) { setError(failure.message); }
+    finally { setArtifactBusy(false); }
+  }
+  function download(format) {
+    try { downloadArtifact(artifact, format, artifactCatalogs, language); }
+    catch (failure) { setError(failure.message); }
+  }
   if (!doc) return <><ErrorBox message={error} /><div className="empty">{t("正在加载学习路径…")}</div></>;
   return <>
     <div className="detail-top"><Link to="/paths"><ArrowLeft size={14} />{t("返回路径列表")}</Link><span className={`status-pill ${doc.status === 'published' ? 'succeeded' : ''}`}>{doc.status === 'published' ? t("已发布") : t("草稿")}</span></div>
     <PageTitle eyebrow={t("PATH EDITOR")} title={t("编辑研究学习路径")} actions={<div className="actions">
-      <button onClick={save} disabled={busy}><Save size={15} />{busy ? t("处理中…") : t("保存路径")}</button>
-      {doc.status === 'draft' ? <button className="ghost" onClick={publish} disabled={busy}><Share2 size={15} />{t("发布分享")}</button> : <>
+      <button onClick={save} disabled={busy || artifactBusy}><Save size={15} />{busy ? t("处理中…") : t("保存路径")}</button>
+      {doc.status === 'draft' ? <button className="ghost" onClick={publish} disabled={busy || artifactBusy}><Share2 size={15} />{t("发布分享")}</button> : <>
         <button className="ghost" onClick={copyShareLink}><Copy size={15} />{t("复制分享链接")}</button>
         <a className="button ghost" href={`/shared/paths/${doc.share_token}`} target="_blank" rel="noreferrer"><ExternalLink size={15} />{t("预览分享页")}</a>
-        <button className="ghost danger" onClick={unpublish} disabled={busy}>{t("停止分享")}</button>
+        <button className="ghost danger" onClick={unpublish} disabled={busy || artifactBusy}>{t("停止分享")}</button>
       </>}
     </div>}>{t("发布后内容仍会随保存更新；停止分享会使旧链接立即失效。")}</PageTitle>
     <ErrorBox message={error} />{message && <div className="success-box">{translateMessage(message)}</div>}
+    <section className="panel artifact-transfer-panel" aria-label={t('artifact.sharePanel')}>
+      <h2>{t('artifact.sharePanel')}</h2><p>{t('artifact.exportIntro')}</p>
+      <label className="check"><input type="checkbox" checked={includeBody} disabled={busy || artifactBusy} onChange={event => {setIncludeBody(event.target.checked); setArtifact(null);}} />{t('artifact.includeBody')}</label>
+      <p className="muted">{t('artifact.scope')}</p>
+      <div className="actions"><button className="ghost" onClick={previewArtifact} disabled={busy || artifactBusy}><Eye size={15} />{artifactBusy ? t('处理中…') : t('artifact.preview')}</button>
+        {artifact && <><button onClick={() => download('html')} disabled={busy || artifactBusy}><Download size={15} />{t('artifact.downloadHtml')}</button><button className="ghost" onClick={() => download('json')} disabled={busy || artifactBusy}><Download size={15} />{t('artifact.downloadJson')}</button></>}
+        <Link className="text-link" to="/artifacts">{t('artifact.importTitle')}</Link></div>
+      {artifact && <><p className="info-note">{t('artifact.savedSnapshot')}</p><PathArtifactView artifact={artifact} /></>}
+    </section>
     <div className="path-editor-layout">
       <section className="panel path-overview">
         <Field label={t("路径标题")}><input aria-label={t("路径标题")} value={doc.title} onChange={e => change('title', e.target.value)} /></Field>
@@ -276,17 +305,26 @@ export function LearningPathEditor() {
   </>;
 }
 export function SharedLearningPath() {
-  useLanguage();
+  const language = useLanguage();
   const {
     token
   } = useParams();
   const [doc, setDoc] = useState(null),
     [error, setError] = useState('');
   useEffect(() => {
-    api(`/shared/learning-paths/${token}`).then(setDoc).catch(e => setError(e.message));
+    api(`/shared/learning-paths/${token}`).then(value => { if (value.artifact) value.artifact = validatePathArtifact(value.artifact); setDoc(value); }).catch(e => setError(e.message));
   }, [token]);
-  if (error) return <main className="public-path-shell"><ErrorBox message={error} /><p>{t("请联系分享者确认链接是否仍然有效。")}</p></main>;
+  if (error && !doc) return <main className="public-path-shell"><ErrorBox message={error} /><p>{t("请联系分享者确认链接是否仍然有效。")}</p></main>;
   if (!doc) return <main className="public-path-shell"><p>{t("正在加载学习路径…")}</p></main>;
+  function downloadShared(format) {
+    try { downloadArtifact(doc.artifact, format, artifactCatalogs, language); }
+    catch (failure) { setError(failure.message); }
+  }
+  if (doc.artifact) return <main className="public-path-shell">
+    <div className="artifact-page-toolbar"><LanguageSwitch /><Link to="/artifacts">{t('artifact.importTitle')}</Link></div>
+    <div className="actions artifact-list-actions"><button onClick={() => downloadShared('html')}><Download size={15} />{t('artifact.downloadHtml')}</button><button className="ghost" onClick={() => downloadShared('json')}><Download size={15} />{t('artifact.downloadJson')}</button></div>
+    <ErrorBox message={error} /><p className="muted">{t('artifact.publicScope')}</p><PathArtifactView artifact={doc.artifact} />
+  </main>;
   const total = doc.steps.reduce((sum, step) => sum + (step.estimated_minutes || 0), 0);
   return <main className="public-path-shell">
     <header className="public-path-header"><LanguageSwitch /><span className="eyebrow">{t("SHARED RESEARCH LEARNING PATH")}</span><h1>{doc.title}</h1><p>{total ? t("{count} 个步骤 · 预计 {minutes} 分钟", {

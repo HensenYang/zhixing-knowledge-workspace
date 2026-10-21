@@ -3,7 +3,7 @@ import asyncio
 import json
 from types import SimpleNamespace
 
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 import pytest
 
@@ -199,7 +199,12 @@ def test_search_and_preview_api_never_write_database(monkeypatch, fake_client):
     monkeypatch.setattr(workspace, 'db', no_database)
     monkeypatch.setattr(workspace.import_assets, 'zotero_pdf', no_pdf)
     monkeypatch.setattr(workspace, 'add_duplicate_hints', lambda data: {**data, 'possible_duplicates': []})
-    with TestClient(workspace.app) as client:
+    # Test handler behavior without application authentication/database middleware.
+    app = FastAPI()
+    app.add_api_route('/api/source-imports/providers', workspace.source_import_providers, methods=['GET'])
+    app.add_api_route('/api/source-imports/zotero/search', workspace.search_zotero, methods=['POST'])
+    app.add_api_route('/api/source-imports/zotero/preview', workspace.preview_zotero, methods=['POST'])
+    with TestClient(app) as client:
         assert client.get('/api/source-imports/providers').json()['zotero']['configured'] is True
         assert client.post('/api/source-imports/zotero/search', json={'query': 'robot'}).json()['items'][0]['item_key'] == KEY
         response = client.post('/api/source-imports/zotero/preview', json={'item_key': KEY})

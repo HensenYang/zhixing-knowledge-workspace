@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 test('missing model configuration disables paid connection test', async ({ page }) => {
   let modelCalls = 0;
   await page.route('**/api/**', route => {
+    if (new URL(route.request().url()).pathname === '/api/auth/me') return route.fulfill({json:{id:'mock-user',email:'test@example.test',display_name:'Test user',workspaces:[{id:'mock-workspace',name:'Test workspace',role:'owner'}]}});
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/llm/test') modelCalls++;
     const data = path === '/api/health' ? { service: 'ready', database: 'ready' }
@@ -22,6 +23,7 @@ test('model calls require a click and a later failure clears previous success', 
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/**', route => {
+    if (new URL(route.request().url()).pathname === '/api/auth/me') return route.fulfill({json:{id:'mock-user',email:'test@example.test',display_name:'Test user',workspaces:[{id:'mock-workspace',name:'Test workspace',role:'owner'}]}});
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/health') return route.fulfill({ json: { service: 'ready', database: 'ready' } });
     if (path === '/api/llm/status') return route.fulfill({ json: {

@@ -1,10 +1,12 @@
 import { test, expect } from '@playwright/test';
+const authenticatedUser = {"id":"40000000-0000-4000-8000-000000000001","email":"test@example.test","display_name":"Test user","workspaces":[{"id":"40000000-0000-4000-8000-000000000002","name":"Test workspace","role":"owner"}]};
 
 test('LLM import follows document language and preserves original images until explicit confirmation', async({page})=>{
   const calls=[];
   const raw='## Original English paper\n\nOriginal method and findings.\n\n![Figure](import-asset://11111111-1111-4111-8111-111111111111)';
   await page.route('**/api/**',route=>{
     const request=route.request(),path=new URL(request.url()).pathname;
+    if(path==='/api/auth/me') return route.fulfill({json:authenticatedUser});
     calls.push({path,body:request.method()==='POST'?request.postDataJSON():null});
     const data=path.endsWith('/health')?{database:'ready'}:path.endsWith('/providers')?{mcp:{enabled:false}}:
       path.endsWith('/preview')?{source_type:'mcp',source_key:'zotero:local:0:ABCD1234',title:'English paper',summary:'Original abstract',body_md:raw,suggested_kind:'resource',metadata:{import_provider:'zotero'},assets:[],preview_token:'a'.repeat(32)}:
@@ -36,6 +38,7 @@ test('a duplicate conflict links to the existing import and allows explicit sepa
   let commits=0,payload;
   await page.route('**/api/**',route=>{
     const request=route.request(),path=new URL(request.url()).pathname;
+    if(path==='/api/auth/me') return route.fulfill({json:authenticatedUser});
     if(path.endsWith('/commit')){
       commits++;payload=request.postDataJSON();
       if(commits===1)return route.fulfill({status:409,json:{detail:{message:'该来源已经导入，请打开已有资料或选择另存笔记。',existing_import:{id:'existing-note',title:'Existing original',deleted_at:null}}}});
@@ -75,7 +78,8 @@ async function mockWorkspace(page, { failSave = false } = {}) {
     const url = new URL(request.url());
     calls.push({ path: url.pathname, method: request.method() });
     let data = [];
-    if (url.pathname === '/api/health') data = { service: 'ready', database: 'ready', schema_version: 'V002' };
+    if (url.pathname === '/api/auth/me') data = authenticatedUser;
+    else if (url.pathname === '/api/health') data = { service: 'ready', database: 'ready', schema_version: 'V002' };
     else if (url.pathname === '/api/llm/status') data = { configured: false, api_key_configured: false, missing: ['LLM_API_KEY', 'LLM_MODEL'] };
     else if (url.pathname === '/api/learning-paths') data = [];
     else if (url.pathname === '/api/source-imports/providers') data = { providers: ['arxiv', 'doi', 'github', 'pdf'], mcp: { enabled: false } };

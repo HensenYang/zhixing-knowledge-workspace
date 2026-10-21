@@ -33,6 +33,7 @@ from .importers import import_locator, import_pdf
 from . import zotero
 from . import import_assets
 from . import import_analysis
+from . import path_artifacts
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(Path(os.environ.get('WORKSPACE_ENV_FILE', str(ROOT / '.env'))))
@@ -370,7 +371,7 @@ def commit_source_import(data: SourceImportCommit):
                 set_tags(cursor,row['id'],item.tags)
                 if not data.save_as_note:
                     cursor.execute('''INSERT INTO source_imports(source_type,source_key,source_url,original_name,extracted_metadata,object_id)
-                        VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT(source_type,source_key) DO UPDATE SET
+                        VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT(workspace_id,source_type,source_key) DO UPDATE SET
                         source_url=EXCLUDED.source_url,original_name=EXCLUDED.original_name,
                         extracted_metadata=EXCLUDED.extracted_metadata,object_id=EXCLUDED.object_id''',
                         (data.source_type,data.source_key,item.source_url,data.extracted_metadata.get('file_name'),json_value(data.extracted_metadata),row['id']))
@@ -456,7 +457,29 @@ def shared_learning_path(share_token: str):
     if not re.fullmatch(r'[A-Za-z0-9_-]{16,128}',share_token):
         raise HTTPException(404,'学习路径不存在或分享已经停止。')
     with raw_db() as cursor:
-        return learning_path_document(cursor,share_token=share_token)
+        cursor.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+        document = learning_path_document(cursor,share_token=share_token)
+        artifact = path_artifacts.make_artifact(cursor,document)
+        objects = {obj['id']:obj for obj in artifact['objects']}
+        steps = [{**step,'object_available':step['object_id'] in objects,
+            'object_title':objects.get(step['object_id'],{}).get('title'),
+            'object_summary':objects.get(step['object_id'],{}).get('summary'),
+            'object_kind':objects.get(step['object_id'],{}).get('kind')} for step in artifact['path']['steps']]
+        return {**artifact['path'],'steps':steps,'artifact':artifact}
+
+@app.get('/api/learning-paths/{identifier}/artifact')
+def export_learning_path_artifact(identifier: UUID, include_body: bool = False):
+    with db('REPEATABLE READ') as cursor:
+        document = learning_path_document(cursor,identifier)
+        return path_artifacts.make_artifact(cursor,document,include_body)
+
+@app.post('/api/learning-paths/import',status_code=201)
+async def import_learning_path_artifact(file: UploadFile = File(...)):
+    content = await file.read(path_artifacts.MAX_BYTES + 1)
+    artifact = path_artifacts.parse_artifact(content)
+    with db() as cursor:
+        identifier = path_artifacts.import_artifact(cursor,artifact,current_workspace_id.get(),set_tags)
+        return learning_path_document(cursor,identifier)
 
 @app.get('/api/learning-paths/{identifier}')
 def get_learning_path(identifier: UUID):

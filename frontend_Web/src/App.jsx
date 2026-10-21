@@ -22,6 +22,7 @@ import Settings from "./pages/Settings";
 import Imports from "./pages/Imports";
 import Collaboration from "./pages/Collaboration";
 import { LearningPathList, LearningPathEditor, SharedLearningPath } from "./pages/LearningPaths";
+import PathArtifactImport from "./pages/PathArtifactImport";
 
 const navigation = [
   ["/", LayoutDashboard, msg("工作台")],
@@ -41,6 +42,7 @@ export default function App() {
   useLanguage();
   const { user, loading } = useAuth();
   const location = useLocation();
+  if (location.pathname === "/artifacts") return <PathArtifactImport />;
   if (location.pathname.startsWith("/shared/paths/")) {
     return <Routes><Route path="/shared/paths/:token" element={<SharedLearningPath />} /><Route path="*" element={<div className="empty">{t("分享链接无效。")}</div>} /></Routes>;
   }
