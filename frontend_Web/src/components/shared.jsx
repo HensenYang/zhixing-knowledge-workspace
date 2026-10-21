@@ -9,7 +9,7 @@ function MarkdownLink({ href, children, node, ...props }) {
   if (href) {
     try {
       const url = new URL(href, window.location.href);
-      if (url.origin === window.location.origin && /^\/(knowledge|canvases|graph|timeline|experiments|settings|trash)(\/|$)/.test(url.pathname)) {
+      if (url.origin === window.location.origin && /^\/(knowledge|canvases|paths|graph|timeline|experiments|settings|trash)(\/|$)/.test(url.pathname)) {
         return <Link {...props} to={url.pathname + url.search + url.hash}>{children}</Link>;
       }
     } catch { /* Keep malformed or non-web links as ordinary anchors. */ }
@@ -85,6 +85,13 @@ export function PageTitle({
   actions
 }) {
   return <div className="page-title"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1>{children && <p>{children}</p>}</div><div className="actions">{actions}</div></div>;
+}
+export function CollapsiblePanel({title, children, actions, className = '', defaultCollapsed = false}) {
+  const [collapsed,setCollapsed] = React.useState(defaultCollapsed);
+  return <section className={`panel collapsible-panel ${collapsed ? 'collapsed' : ''} ${className}`.trim()}>
+    <div className="section-heading collapsible-heading"><h3>{title}</h3><div className="actions">{actions}<button type="button" className="ghost collapse-button" aria-expanded={!collapsed} aria-label={`${collapsed ? '展开' : '折叠'}${title}`} onClick={() => setCollapsed(value => !value)}>{collapsed ? '展开' : '收起'}</button></div></div>
+    <div className="collapsible-content" hidden={collapsed}>{children}</div>
+  </section>;
 }
 export function SelectKind({
   value,

@@ -35,7 +35,8 @@ export function DeleteButton({
         canvas: 'canvases',
         session: 'sessions',
         run: 'runs',
-        attachment: 'attachments'
+        attachment: 'attachments',
+        path: 'learning-paths'
       };
       await api(`/${paths[kind]}/${id}`, {
         method: 'DELETE'

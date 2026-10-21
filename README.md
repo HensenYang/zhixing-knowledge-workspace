@@ -7,9 +7,12 @@ A relationship-driven knowledge workspace for scientific communication and educa
 ## 功能
 
 - Markdown与公式笔记、来源和标签、版本冲突检查与浏览器草稿。
+- arXiv、DOI、GitHub、PDF与可选MCP资料导入；确认后入库，避免覆盖现有内容。
 - 带类型及证据的知识关系、全局图谱和可编辑画布。
+- 可保存、排序和发布的研究学习路径，包含学习目标、讲解提示与逐步完成条件。
 - 沿关系阅读：前置基座、方法应用、证据与横向比较；局部图跟随阅读位置并突出访问路径。
 - 学习日志、待运行及已运行实验、附件、回收站、ZIP备份恢复。
+- 单篇知识资料可导出为Markdown、Word或PDF，包含来源、关系与证据。
 
 ## 技术结构
 
@@ -75,5 +78,7 @@ npx playwright test tests/reading-navigation.spec.js
 阅读导航测试使用模拟接口。其他后端／浏览器验收可能写入测试数据，必须连接隔离测试数据库；参见测试代码中的 `TEST_DATABASE_URL` 配置，勿对个人正式数据库运行。
 
 [框架设计](docs/phase-1-design.md) · [分享包说明](docs/share-guide.md)
+
+[资料导入与导出说明](docs/import-export.md) · [研究学习路径说明](docs/learning-paths.md)
 
 第三方代码、模型和数据仍受原始许可约束。案例中的官方源码快照属于本机研究缓存，不提交仓库；固定版本及原始出处见资料清单和笔记。

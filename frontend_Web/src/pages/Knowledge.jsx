@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Plus, ArrowUpRight, Save, Archive, RotateCcw, Paperclip } from 'lucide-react';
+import { Plus, ArrowUpRight, Save, Archive, RotateCcw, Paperclip, Download } from 'lucide-react';
 import { api, write } from '../services/api';
-import { Badge, Field, PageTitle, SelectKind, Empty, ErrorBox, Markdown, DateText, RELATIONS } from '../components/shared';
+import { Badge, CollapsiblePanel, Field, PageTitle, SelectKind, Empty, ErrorBox, Markdown, DateText, RELATIONS } from '../components/shared';
 import ReadingNavigator from '../components/ReadingNavigator';
 import RelationEditor from '../components/RelationEditor';
 import { DeleteButton, useWorkspaceChanges } from '../components/RecordActions';
@@ -145,6 +145,21 @@ function KnowledgeDetailInner() {
       setError(e.message);
     }
   }
+  async function exportMaterial(format) {
+    if (draft.status !== '已保存') {
+      const saved = await draft.save();
+      if (!saved) {
+        setError('请先解决保存错误，再导出服务器中的最新资料。');
+        return;
+      }
+    }
+    const anchor = document.createElement('a');
+    anchor.href = `/api/objects/${id}/export?format=${format}`;
+    anchor.download = '';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }
   if (!form) return <><ErrorBox message={error} /><div className="empty">加载笔记…</div></>;
   return <><div className="detail-top"><div className="actions detail-navigation"><button className="ghost" onClick={goBack}>← 返回上一页</button><Link to="/knowledge">知识与资料</Link></div><div className="actions"><span className="save-status">{draft.status}</span><button onClick={draft.save}><Save size={15} />保存</button><button className="ghost" onClick={draft.download}>下载草稿</button><DeleteButton kind="object" id={id} title={form.title} label="删除笔记" beforeDelete={draft.save} onDeleted={() => navigate("/knowledge")} /></div></div><ErrorBox message={error || draft.error} />{draft.error && <button className="ghost" onClick={async () => {
       await draft.discard();
@@ -156,7 +171,7 @@ function KnowledgeDetailInner() {
                 tags: r.snapshot.tags || []
               });
               setHistory(null);
-            }}>恢复到草稿</button></div>) : <p>首次编辑保存后会生成历史。</p>}</div>}</section><aside className="detail-sidebar"><ReadingNavigator id={id} title={form.title} objects={objects} relations={relations} refresh={refresh} onAddRelation={() => setRelation('new')} onEditRelation={edgeId => setRelation(relations.find(r => r.id === edgeId))} />{relation && <section className="panel"><RelationEditor key={relation.id || 'new'} objects={objects} initial={relation === 'new' ? null : relation} source={id} onDone={() => { setRelation(null); setRefresh(r => r + 1); }} /></section>}<section className="panel"><h3>笔记属性</h3><Field label="类型"><SelectKind value={form.kind} onChange={e => update('kind', e.target.value)} /></Field><Field label="阅读进度"><select value={form.reading_status} onChange={e => update('reading_status', e.target.value)}>{Object.entries({
+            }}>恢复到草稿</button></div>) : <p>首次编辑保存后会生成历史。</p>}</div>}</section><aside className="detail-sidebar"><ReadingNavigator id={id} title={form.title} objects={objects} relations={relations} refresh={refresh} onAddRelation={() => setRelation('new')} onEditRelation={edgeId => setRelation(relations.find(r => r.id === edgeId))} />{relation && <CollapsiblePanel title={relation === 'new' ? '建立知识关系' : '编辑知识关系'}><RelationEditor key={relation.id || 'new'} objects={objects} initial={relation === 'new' ? null : relation} source={id} showTitle={false} onDone={() => { setRelation(null); setRefresh(r => r + 1); }} /></CollapsiblePanel>}<CollapsiblePanel title="笔记属性"><Field label="类型"><SelectKind value={form.kind} onChange={e => update('kind', e.target.value)} /></Field><Field label="阅读进度"><select value={form.reading_status} onChange={e => update('reading_status', e.target.value)}>{Object.entries({
                 unread: '待处理',
                 skimming: '浏览',
                 reading: '精读',
@@ -176,7 +191,7 @@ function KnowledgeDetailInner() {
               } catch {
                 setMetaError('扩展属性必须是有效的 JSON 对象。');
               }
-            }} /><ErrorBox message={metaError} /></details><button className="ghost" onClick={() => update('archived_at', form.archived_at ? null : new Date().toISOString())}><Archive size={14} />{form.archived_at ? '恢复归档笔记' : '归档笔记'}</button></section><section className="panel"><div className="section-heading"><h3>资料附件</h3><label className="icon-button" aria-label="上传附件"><Paperclip size={16} /><input type="file" className="hidden" onChange={upload} /></label></div>{attachments.map(a => <div key={a.id}><a className="attachment" href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer">{a.original_name}<small>{Math.round(a.size_bytes / 1024)} KB</small></a><div className="actions"><button className="ghost" onClick={async () => {
+            }} /><ErrorBox message={metaError} /></details><button className="ghost" onClick={() => update('archived_at', form.archived_at ? null : new Date().toISOString())}><Archive size={14} />{form.archived_at ? '恢复归档笔记' : '归档笔记'}</button></CollapsiblePanel><CollapsiblePanel title="导出资料"><p className="muted">导出当前正文、来源、标签、关系与证据。</p><div className="export-buttons"><button className="ghost" onClick={() => exportMaterial('md')}><Download size={14} />Markdown</button><button className="ghost" onClick={() => exportMaterial('docx')}><Download size={14} />Word</button><button className="ghost" onClick={() => exportMaterial('pdf')}><Download size={14} />PDF</button></div></CollapsiblePanel><CollapsiblePanel title="资料附件" actions={<label className="icon-button" aria-label="上传附件"><Paperclip size={16} /><input type="file" className="hidden" onChange={upload} /></label>}>{attachments.map(a => <div key={a.id}><a className="attachment" href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer">{a.original_name}<small>{Math.round(a.size_bytes / 1024)} KB</small></a><div className="actions"><button className="ghost" onClick={async () => {
                 const name = window.prompt("附件名称", a.original_name);
                 if (!name?.trim()) return;
                 try {
@@ -187,5 +202,5 @@ function KnowledgeDetailInner() {
                 } catch (e) {
                   setError(e.message);
                 }
-              }}>重命名</button><DeleteButton kind="attachment" id={a.id} title={a.original_name} /></div></div>)}{!attachments.length && <p className="muted">保存 PDF、图片或小型实验日志。</p>}</section></aside></div></>;
+              }}>重命名</button><DeleteButton kind="attachment" id={a.id} title={a.original_name} /></div></div>)}{!attachments.length && <p className="muted">保存 PDF、图片或小型实验日志。</p>}</CollapsiblePanel></aside></div></>;
 }

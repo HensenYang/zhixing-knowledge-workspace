@@ -3,11 +3,14 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 from uuid import UUID, uuid4
 import hashlib
 import io
 import json
 import os
+import re
+import secrets
 import shutil
 import zipfile
 
@@ -19,6 +22,9 @@ from pydantic import BaseModel, Field
 import psycopg2
 from psycopg2 import sql
 from psycopg2.extras import Json, RealDictCursor
+
+from .exporters import material_docx, material_markdown, material_pdf
+from .importers import import_locator, import_pdf
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(Path(os.environ.get('WORKSPACE_ENV_FILE', str(ROOT / '.env'))))
@@ -33,7 +39,8 @@ app = FastAPI(title='Embodied Knowledge Workspace', version='0.1.0')
 Kind = Literal['concept','resource','repository','model','dataset','benchmark','experiment','question','task']
 RelationType = Literal['depends_on','implements','uses','evaluates','supports','questions','compares_with','related_to']
 TRASH_TABLES = {'object':'objects','relation':'relations','canvas':'canvases',
-                'session':'learning_sessions','run':'experiment_runs','attachment':'attachments'}
+                'session':'learning_sessions','run':'experiment_runs','attachment':'attachments',
+                'path':'learning_paths'}
 
 @contextmanager
 def db():
@@ -83,6 +90,34 @@ class ObjectUpdate(ObjectInput):
     version: int = Field(ge=1)
     archived_at: datetime | None = None
 
+SourceType = Literal['auto','arxiv','doi','github','mcp']
+
+class SourcePreviewInput(BaseModel):
+    source: str = Field(min_length=1,max_length=4000)
+    source_type: SourceType = 'auto'
+
+class SourceImportCommit(BaseModel):
+    source_type: Literal['arxiv','doi','github','pdf','mcp']
+    source_key: str = Field(min_length=1,max_length=1000)
+    extracted_metadata: dict = Field(default_factory=dict)
+    object: ObjectInput
+
+class LearningPathStepInput(BaseModel):
+    id: UUID | None = None
+    object_id: UUID | None = None
+    title: str = Field(min_length=1,max_length=500)
+    guidance_md: str = ''
+    completion_criteria_md: str = ''
+    estimated_minutes: int | None = Field(default=None,ge=0,le=100000)
+
+class LearningPathInput(BaseModel):
+    title: str = Field(min_length=1,max_length=500)
+    objective_md: str = ''
+    description_md: str = ''
+    completion_criteria_md: str = ''
+    steps: list[LearningPathStepInput] = Field(default_factory=list,max_length=100)
+    version: int | None = Field(default=None,ge=1)
+
 def validate_object(data):
     if not data.title.strip():
         raise HTTPException(422, '标题不能为空。')
@@ -103,6 +138,14 @@ def object_with_tags(cursor, row):
     cursor.execute('SELECT name FROM tags JOIN object_tags ON tags.id=tag_id WHERE object_id=%s ORDER BY name', (row['id'],))
     return {**row, 'tags':[tag['name'] for tag in cursor.fetchall()]}
 
+def add_duplicate_hints(preview):
+    with db() as cursor:
+        cursor.execute('''SELECT id,title,source_url FROM objects WHERE deleted_at IS NULL AND
+            (lower(title)=lower(%s) OR (%s IS NOT NULL AND source_url=%s)) ORDER BY updated_at DESC LIMIT 5''',
+            (preview['title'],preview.get('source_url'),preview.get('source_url')))
+        preview['possible_duplicates'] = cursor.fetchall()
+    return preview
+
 @app.get('/api/health')
 def health():
     try:
@@ -112,6 +155,170 @@ def health():
         return {'service':'ready','database':'ready','schema_version':version['version'] if version else None}
     except HTTPException as error:
         return {'service':'ready','database':'unavailable','message':error.detail}
+
+@app.get('/api/source-imports/providers')
+def source_import_providers():
+    return {
+        'providers': ['arxiv','doi','github','pdf'],
+        'mcp': {
+            'enabled': bool(os.environ.get('MCP_IMPORT_SERVER_URL','').strip()),
+            'tool': os.environ.get('MCP_IMPORT_TOOL','import_source'),
+        },
+    }
+
+@app.post('/api/source-imports/preview')
+async def preview_source(data: SourcePreviewInput):
+    return add_duplicate_hints(await import_locator(data.source,data.source_type))
+
+@app.post('/api/source-imports/preview-file')
+async def preview_source_file(file: UploadFile = File(...)):
+    content = await file.read(32 * 1024 * 1024 + 1)
+    return add_duplicate_hints(import_pdf(content,Path(file.filename or 'document.pdf').name))
+
+@app.post('/api/source-imports/commit',status_code=201)
+def commit_source_import(data: SourceImportCommit):
+    validate_object(data.object)
+    with db() as cursor:
+        cursor.execute('SELECT object_id FROM source_imports WHERE source_type=%s AND source_key=%s',
+            (data.source_type,data.source_key))
+        existing=cursor.fetchone()
+        if existing:
+            raise HTTPException(409,'该来源已经导入。请打开已有资料，或修改后使用普通新建笔记。')
+        item=data.object
+        cursor.execute('''INSERT INTO objects(kind,title,summary,body_md,source_url,reading_status,mastery_status,metadata)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *''',
+            (item.kind,item.title.strip(),item.summary,item.body_md,item.source_url,item.reading_status,item.mastery_status,json_value(item.metadata)))
+        row=cursor.fetchone()
+        set_tags(cursor,row['id'],item.tags)
+        cursor.execute('''INSERT INTO source_imports(source_type,source_key,source_url,original_name,extracted_metadata,object_id)
+            VALUES (%s,%s,%s,%s,%s,%s)''',
+            (data.source_type,data.source_key,item.source_url,data.extracted_metadata.get('file_name'),json_value(data.extracted_metadata),row['id']))
+        return object_with_tags(cursor,row)
+
+def learning_path_document(cursor, identifier=None, share_token=None):
+    if share_token is not None:
+        cursor.execute('''SELECT * FROM learning_paths WHERE share_token=%s AND status='published'
+            AND deleted_at IS NULL''',(share_token,))
+    else:
+        cursor.execute('SELECT * FROM learning_paths WHERE id=%s AND deleted_at IS NULL',(str(identifier),))
+    path=cursor.fetchone()
+    if not path:
+        raise HTTPException(404,'学习路径不存在或分享已经停止。')
+    cursor.execute('''SELECT s.*,o.title AS object_title,o.summary AS object_summary,
+        o.kind AS object_kind,o.deleted_at AS object_deleted_at
+        FROM learning_path_steps s LEFT JOIN objects o ON o.id=s.object_id
+        WHERE s.path_id=%s ORDER BY s.position''',(path['id'],))
+    steps=cursor.fetchall()
+    for step in steps:
+        object_deleted_at=step.pop('object_deleted_at')
+        step['object_available']=step['object_id'] is not None and object_deleted_at is None
+    return {**path,'steps':steps}
+
+def replace_learning_path_steps(cursor, path_id, steps):
+    step_ids=[step.id or uuid4() for step in steps]
+    if len(step_ids) != len(set(step_ids)):
+        raise HTTPException(422,'学习步骤 ID 不能重复。')
+    for step in steps:
+        if not step.title.strip():
+            raise HTTPException(422,'学习步骤标题不能为空。')
+        if step.object_id is not None:
+            require(cursor,'objects',step.object_id)
+    cursor.execute('DELETE FROM learning_path_steps WHERE path_id=%s',(str(path_id),))
+    for position,(step,step_id) in enumerate(zip(steps,step_ids)):
+        cursor.execute('''INSERT INTO learning_path_steps
+            (id,path_id,object_id,position,title,guidance_md,completion_criteria_md,estimated_minutes)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)''',
+            (str(step_id),str(path_id),str(step.object_id) if step.object_id else None,position,
+             step.title.strip(),step.guidance_md,step.completion_criteria_md,step.estimated_minutes))
+
+@app.get('/api/learning-paths')
+def list_learning_paths():
+    with db() as cursor:
+        cursor.execute('''SELECT p.*,count(s.id)::integer AS step_count,
+            COALESCE(sum(s.estimated_minutes),0)::integer AS estimated_minutes
+            FROM learning_paths p LEFT JOIN learning_path_steps s ON s.path_id=p.id
+            WHERE p.deleted_at IS NULL GROUP BY p.id ORDER BY p.updated_at DESC''')
+        return cursor.fetchall()
+
+@app.post('/api/learning-paths',status_code=201)
+def create_learning_path(data: LearningPathInput):
+    if not data.title.strip():
+        raise HTTPException(422,'学习路径标题不能为空。')
+    with db() as cursor:
+        cursor.execute('''INSERT INTO learning_paths(title,objective_md,description_md,completion_criteria_md)
+            VALUES (%s,%s,%s,%s) RETURNING *''',
+            (data.title.strip(),data.objective_md,data.description_md,data.completion_criteria_md))
+        path=cursor.fetchone()
+        replace_learning_path_steps(cursor,path['id'],data.steps)
+        return learning_path_document(cursor,path['id'])
+
+@app.get('/api/shared/learning-paths/{share_token}')
+def shared_learning_path(share_token: str):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{16,128}',share_token):
+        raise HTTPException(404,'学习路径不存在或分享已经停止。')
+    with db() as cursor:
+        return learning_path_document(cursor,share_token=share_token)
+
+@app.get('/api/learning-paths/{identifier}')
+def get_learning_path(identifier: UUID):
+    with db() as cursor:
+        return learning_path_document(cursor,identifier)
+
+@app.put('/api/learning-paths/{identifier}')
+def update_learning_path(identifier: UUID,data: LearningPathInput):
+    if not data.title.strip():
+        raise HTTPException(422,'学习路径标题不能为空。')
+    if data.version is None:
+        raise HTTPException(422,'保存学习路径需要当前版本号。')
+    with db() as cursor:
+        cursor.execute('SELECT * FROM learning_paths WHERE id=%s AND deleted_at IS NULL FOR UPDATE',(str(identifier),))
+        path=cursor.fetchone()
+        if not path:
+            raise HTTPException(404,'学习路径不存在。')
+        if path['version'] != data.version:
+            raise HTTPException(409,'另一标签页已经修改这条学习路径，请刷新后合并。')
+        cursor.execute('''UPDATE learning_paths SET title=%s,objective_md=%s,description_md=%s,
+            completion_criteria_md=%s,version=version+1,updated_at=now()
+            WHERE id=%s RETURNING *''',
+            (data.title.strip(),data.objective_md,data.description_md,data.completion_criteria_md,str(identifier)))
+        replace_learning_path_steps(cursor,identifier,data.steps)
+        return learning_path_document(cursor,identifier)
+
+@app.post('/api/learning-paths/{identifier}/publish')
+def publish_learning_path(identifier: UUID):
+    with db() as cursor:
+        path=learning_path_document(cursor,identifier)
+        if not path['objective_md'].strip():
+            raise HTTPException(422,'发布前请填写学习目标。')
+        if not path['completion_criteria_md'].strip():
+            raise HTTPException(422,'发布前请填写整条路径的完成条件。')
+        if not path['steps']:
+            raise HTTPException(422,'发布前请至少添加一个学习步骤。')
+        if any(not step['completion_criteria_md'].strip() for step in path['steps']):
+            raise HTTPException(422,'发布前请为每个学习步骤填写完成条件。')
+        token=path['share_token'] or secrets.token_urlsafe(18)
+        cursor.execute('''UPDATE learning_paths SET status='published',share_token=%s,
+            version=version+1,updated_at=now() WHERE id=%s RETURNING *''',(token,str(identifier)))
+        return learning_path_document(cursor,identifier)
+
+@app.post('/api/learning-paths/{identifier}/unpublish')
+def unpublish_learning_path(identifier: UUID):
+    with db() as cursor:
+        require(cursor,'learning_paths',identifier)
+        cursor.execute('''UPDATE learning_paths SET status='draft',share_token=NULL,
+            version=version+1,updated_at=now() WHERE id=%s AND deleted_at IS NULL RETURNING *''',(str(identifier),))
+        return learning_path_document(cursor,identifier)
+
+@app.delete('/api/learning-paths/{identifier}')
+def delete_learning_path(identifier: UUID):
+    with db() as cursor:
+        require(cursor,'learning_paths',identifier)
+        cursor.execute('''UPDATE learning_paths SET status='draft',share_token=NULL,deleted_at=now(),
+            version=version+1,updated_at=now() WHERE id=%s AND deleted_at IS NULL RETURNING *''',(str(identifier),))
+        row=cursor.fetchone()
+        if not row:
+            raise HTTPException(409,'学习路径已删除，请刷新。')
+        return {**row,'trash_kind':'path'}
 
 @app.get('/api/objects')
 def list_objects(q: str = '', kind: str = '', archived: bool = False, limit: int = 200, offset: int = 0):
@@ -698,8 +905,41 @@ def download_attachment(identifier: UUID):
         raise HTTPException(404,'附件文件未找到。')
     return FileResponse(path,filename=row['original_name'],media_type=row['mime_type'])
 
-TABLES = ['objects','tags','object_tags','relations','relation_evidence','canvases','canvas_items','canvas_edges','learning_sessions','session_objects','experiment_runs','run_artifacts','attachments','object_attachments','object_revisions','canvas_revisions']
-JSON_FIELDS = {'metadata','viewport','properties','config','environment','metrics','snapshot'}
+def export_material_record(identifier):
+    with db() as cursor:
+        item=object_with_tags(cursor,require(cursor,'objects',identifier))
+        cursor.execute('''SELECT r.*,a.title AS source_title,b.title AS target_title
+            FROM relations r JOIN objects a ON a.id=r.source_id JOIN objects b ON b.id=r.target_id
+            WHERE r.deleted_at IS NULL AND (r.source_id=%s OR r.target_id=%s) ORDER BY r.created_at''',
+            (str(identifier),str(identifier)))
+        relations=cursor.fetchall()
+        for relation in relations:
+            cursor.execute('SELECT * FROM relation_evidence WHERE relation_id=%s ORDER BY id',(relation['id'],))
+            relation['evidence']=cursor.fetchall()
+        cursor.execute('''SELECT a.original_name,a.mime_type,a.size_bytes FROM attachments a
+            JOIN object_attachments oa ON oa.attachment_id=a.id
+            WHERE oa.object_id=%s AND a.deleted_at IS NULL ORDER BY a.created_at''',(str(identifier),))
+        attachments=cursor.fetchall()
+    return {'object':item,'relations':relations,'attachments':attachments}
+
+@app.get('/api/objects/{identifier}/export')
+def export_material(identifier: UUID, format: Literal['md','docx','pdf']='md'):
+    record=export_material_record(identifier)
+    markdown=material_markdown(record)
+    title=record['object']['title'].strip() or 'knowledge-material'
+    safe=re.sub(r'[\\/:*?"<>|\x00-\x1f]+','-',title).strip(' .')[:80] or 'knowledge-material'
+    fallback=f'knowledge-material.{format}'
+    headers={'Content-Disposition':f"attachment; filename={fallback}; filename*=UTF-8''{quote(f'{safe}.{format}')}"}
+    if format=='md':
+        return Response(markdown.encode('utf-8'),media_type='text/markdown; charset=utf-8',headers=headers)
+    if format=='docx':
+        return Response(material_docx(markdown),media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',headers=headers)
+    return Response(material_pdf(markdown),media_type='application/pdf',headers=headers)
+
+TABLES = ['objects','tags','object_tags','relations','relation_evidence','canvases','canvas_items','canvas_edges','learning_sessions','session_objects','experiment_runs','run_artifacts','attachments','object_attachments','object_revisions','canvas_revisions','source_imports','learning_paths','learning_path_steps']
+BACKUP_V1_TABLES = TABLES[:-3]
+BACKUP_V2_TABLES = TABLES[:-2]
+JSON_FIELDS = {'metadata','viewport','properties','config','environment','metrics','snapshot','extracted_metadata'}
 
 @app.get('/api/export')
 def export_backup():
@@ -710,7 +950,7 @@ def export_backup():
         for table in TABLES:
             cursor.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table)))
             tables[table] = jsonable_encoder(cursor.fetchall())
-        manifest = {'format':'embodied-knowledge','version':1,'created_at':datetime.now().isoformat(),'tables':tables,'external_artifacts_included':False}
+        manifest = {'format':'embodied-knowledge','version':3,'created_at':datetime.now().isoformat(),'tables':tables,'external_artifacts_included':False}
         with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as archive:
             archive.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False))
             for item in tables['attachments']:
@@ -730,9 +970,20 @@ def inspect_backup(content):
         if len(archive.namelist()) != len(set(archive.namelist())):
             raise HTTPException(422,'备份包含重复文件名。')
         manifest = json.loads(archive.read('manifest.json'))
-        if manifest.get('format') != 'embodied-knowledge' or manifest.get('version') != 1 or set(manifest.get('tables',{})) != set(TABLES):
+        version=manifest.get('version')
+        table_names=set(manifest.get('tables',{}))
+        if manifest.get('format') != 'embodied-knowledge' or not (
+            (version == 1 and table_names == set(BACKUP_V1_TABLES)) or
+            (version == 2 and table_names == set(BACKUP_V2_TABLES)) or
+            (version == 3 and table_names == set(TABLES))
+        ):
             raise HTTPException(422,'备份格式或版本不支持。')
         tables = manifest['tables']
+        if version == 1:
+            tables['source_imports']=[]
+        if version in (1,2):
+            tables['learning_paths']=[]
+            tables['learning_path_steps']=[]
         if not all(isinstance(rows,list) and all(isinstance(row,dict) for row in rows) for rows in tables.values()):
             raise HTTPException(422,'备份表结构无效。')
         for item in tables['attachments']:

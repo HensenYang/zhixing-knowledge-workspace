@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import GraphView from './GraphView';
-import { RELATIONS } from './shared';
+import { CollapsiblePanel, ErrorBox, RELATIONS } from './shared';
+import { write } from '../services/api';
 
 const TRAIL_KEY = 'workspace:reading-trail';
 const PREFS_KEY = 'workspace:reading-preferences';
@@ -23,7 +24,7 @@ const meanings = {
 };
 export default function ReadingNavigator({ id, title, objects, relations, refresh, onEditRelation, onAddRelation }) {
   const navigate = useNavigate();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(false), [savingTrail,setSavingTrail]=useState(false), [trailError,setTrailError]=useState('');
   useEffect(() => {
     if (!expanded) return;
     const close = event => { if (event.key === 'Escape') setExpanded(false); };
@@ -54,6 +55,27 @@ export default function ReadingNavigator({ id, title, objects, relations, refres
   const visitedIds = trail.map(item => item.id);
   const trailPairs = trail.slice(1).map((item, i) => [trail[i].id, item.id]);
   const groups = {};
+  async function saveTrail() {
+    if (!trail.length) return;
+    setSavingTrail(true); setTrailError('');
+    try {
+      const created=await write('/learning-paths',{
+        title:`阅读路径：${trail[0].title || title}`,
+        objective_md:'沿本次访问顺序回顾知识，并补充每一步的理解目标。',
+        description_md:'由当前浏览器标签页的阅读轨迹生成，可继续编辑、排序和发布。',
+        completion_criteria_md:'',
+        steps:trail.map(item=>({
+          object_id:byId[item.id]?.id || null,
+          title:byId[item.id]?.title || item.title || '已不可用的知识对象',
+          guidance_md:'回顾这一步为什么出现在路径中，并记录它与前后步骤的联系。',
+          completion_criteria_md:'',
+          estimated_minutes:null
+        }))
+      });
+      navigate(`/paths/${created.id}`);
+    } catch (error) { setTrailError(error.message); }
+    finally { setSavingTrail(false); }
+  }
   for (const relation of relations) {
     if (relation.source_id !== id && relation.target_id !== id) continue;
     const symmetric = ['related_to', 'compares_with'].includes(relation.relation_type);
@@ -65,8 +87,7 @@ export default function ReadingNavigator({ id, title, objects, relations, refres
     const label = (meanings[relation.relation_type] || ['关联', '关联'])[outgoing ? 0 : 1];
     (groups[label] ||= []).push({relation, target, outgoing, symmetric});
   }
-  return <section className="panel reading-navigator" aria-label="沿关系阅读">
-    <div className="section-heading"><h3>沿关系阅读</h3><button className="ghost" onClick={onAddRelation}>添加关系</button></div>
+  return <CollapsiblePanel title="沿关系阅读" className="reading-navigator" actions={<button type="button" className="ghost" onClick={onAddRelation}>添加关系</button>}>
     <p className="reading-position"><span>当前位置</span><strong>{title}</strong></p>
     <div className="reading-filters">
       <label>关系类型<select aria-label="阅读关系类型" value={prefs.relation} onChange={e => change('relation', e.target.value)}><option value="">全部关系</option>{Object.entries(RELATIONS).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select></label>
@@ -79,8 +100,8 @@ export default function ReadingNavigator({ id, title, objects, relations, refres
       <Link to={`/knowledge/${target.id}`}><small>{symmetric ? '↔' : outgoing ? '→' : '←'} {RELATIONS[relation.relation_type]}{visitedIds.includes(target.id) ? ' · 访问过' : ''}</small><strong>{target.title}</strong>{relation.description && <span>{relation.description}</span>}</Link>
       <button className="ghost" aria-label={`修改关系：${target.title}`} onClick={() => onEditRelation(relation.id)}>修改</button>
     </div>)}</section>)}{!Object.keys(groups).length && <p className="muted">当前筛选下没有相邻节点。可切换关系类型、方向或添加关系。</p>}</div>
-    <details className="reading-trail" open><summary>本次阅读路径（最近40次访问）</summary><ol>{trail.map((item, index) => <li key={`${item.id}-${index}`}>{index === trail.length - 1 ? <strong aria-current="page">{byId[item.id]?.title || item.title} · 当前</strong> : byId[item.id] ? <Link to={`/knowledge/${item.id}`}>{byId[item.id].title}</Link> : <span>{item.title}（已不可用）</span>}</li>)}</ol><button className="ghost" onClick={() => { const next = [{id, title}]; store(TRAIL_KEY, next); setTrail(next); }}>重新开始路径</button></details>
-    <p className="muted">访问记录保存在当前浏览器标签页；理解程度由你另行记录。</p>
+    <details className="reading-trail" open><summary>本次阅读路径（最近40次访问）</summary><ol>{trail.map((item, index) => <li key={`${item.id}-${index}`}>{index === trail.length - 1 ? <strong aria-current="page">{byId[item.id]?.title || item.title} · 当前</strong> : byId[item.id] ? <Link to={`/knowledge/${item.id}`}>{byId[item.id].title}</Link> : <span>{item.title}（已不可用）</span>}</li>)}</ol><div className="actions"><button className="ghost" onClick={saveTrail} disabled={savingTrail}>{savingTrail?'保存中…':'保存为学习路径'}</button><button className="ghost" onClick={() => { const next = [{id, title}]; store(TRAIL_KEY, next); setTrail(next); }}>重新开始路径</button></div><ErrorBox message={trailError}/></details>
+    <p className="muted">访问记录暂存在当前标签页；保存为学习路径后可继续编辑、排序和发布。</p>
     {expanded && <div className="modal-backdrop" onClick={event => { if (event.target === event.currentTarget) setExpanded(false); }}><section className="panel reading-graph-dialog" role="dialog" aria-modal="true" aria-label="展开局部图谱"><div className="section-heading"><h3>{title} · 局部图谱</h3><button autoFocus className="ghost" onClick={() => setExpanded(false)}>关闭图谱</button></div><p className="muted">{RELATIONS[prefs.relation] || '全部关系'} · {prefs.depth}层关联 · 点击节点继续阅读</p><GraphView center={id} depth={prefs.depth} relationType={prefs.relation} direction={prefs.direction} visitedIds={visitedIds} trailPairs={trailPairs} refresh={refresh} compact onNode={nodeId => { if (nodeId !== id) navigate(`/knowledge/${nodeId}`); }} onEdge={edgeId => { setExpanded(false); onEditRelation(edgeId); }} /></section></div>}
-  </section>;
+  </CollapsiblePanel>;
 }
