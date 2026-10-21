@@ -6,10 +6,9 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 import time
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException
-from fastapi.testclient import TestClient
 import httpx
 from PIL import Image
 import pymupdf
@@ -145,15 +144,14 @@ def test_confirmation_saves_files_with_transaction_and_cleans_up_on_failure(monk
 
 def test_preview_asset_endpoint_is_inline_and_does_not_write_notes(monkeypatch, tmp_path):
     monkeypatch.setattr(workspace, 'STORAGE', tmp_path)
-    monkeypatch.setattr(workspace, 'add_duplicate_hints', lambda data: {**data, 'possible_duplicates': []})
-    with TestClient(workspace.app) as client:
-        preview = client.post('/api/source-imports/preview-file', files={'file': ('paper.pdf', pdf_bytes(), 'application/pdf')}).json()
-        image = next(item for item in preview['assets'] if item['kind'] == 'image')
-        response = client.get(image['preview_url'])
-        assert response.status_code == 200 and response.content.startswith(b'\x89PNG')
-        assert response.headers['content-disposition'].startswith('inline')
-        assert response.headers['x-content-type-options'] == 'nosniff'
-        assert not (tmp_path/'attachments').exists()
+    preview = media.local_pdf(pdf_bytes(), 'paper.pdf', tmp_path)
+    image = next(item for item in preview['assets'] if item['kind'] == 'image')
+    response = workspace.preview_import_asset(preview['preview_token'], UUID(image['id']))
+    assert response.status_code == 200
+    assert Path(response.path).read_bytes().startswith(b'\x89PNG')
+    assert response.headers['content-disposition'].startswith('inline')
+    assert response.headers['x-content-type-options'] == 'nosniff'
+    assert not (tmp_path/'attachments').exists()
 
 
 def test_zotero_local_file_redirect_copies_pdf_images_and_handles_percent_names(monkeypatch, tmp_path):

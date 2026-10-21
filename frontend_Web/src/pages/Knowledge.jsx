@@ -8,6 +8,7 @@ import ReadingNavigator from "../components/ReadingNavigator";
 import RelationEditor from "../components/RelationEditor";
 import { DeleteButton, useWorkspaceChanges } from "../components/RecordActions";
 import useDraft from "../hooks/useDraft";
+import CollaborationPanel from '../components/CollaborationPanel';
 export function KnowledgeList() {
   useLanguage();
   const [objects, setObjects] = useState([]),
@@ -98,7 +99,8 @@ function KnowledgeDetailInner() {
     [refresh, setRefresh] = useState(0),
     [relation, setRelation] = useState(null),
     [history, setHistory] = useState(null),
-    [metaError, setMetaError] = useState("");
+    [metaError, setMetaError] = useState(""),
+    [remoteConflict, setRemoteConflict] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const mode = searchParams.get("mode") === "edit" ? "edit" : "preview";
   const setMode = next => {
@@ -151,6 +153,17 @@ function KnowledgeDetailInner() {
       setError(e.message);
     }
   }
+  async function loadConflict() {
+    try {
+      setRemoteConflict(editable(await api(`/objects/${id}`)));
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  async function saveMerged() {
+    draft.change(value => ({ ...value, version: remoteConflict.version }));
+    if (await draft.save()) setRemoteConflict(null);
+  }
   async function exportMaterial(format) {
     if (draft.status !== t("已保存")) {
       const saved = await draft.save();
@@ -167,10 +180,10 @@ function KnowledgeDetailInner() {
     anchor.remove();
   }
   if (!form) return <><ErrorBox message={error} /><div className="empty">{t("加载笔记…")}</div></>;
-  return <><div className="detail-top"><div className="actions detail-navigation"><button className="ghost" onClick={goBack}>{t("← 返回上一页")}</button><Link to="/knowledge">{t("知识与资料")}</Link></div><div className="actions"><span className="save-status">{draft.status}</span><button onClick={draft.save}><Save size={15} />{t("保存")}</button><button className="ghost" onClick={draft.download}>{t("下载草稿")}</button><DeleteButton kind="object" id={id} title={form.title} label={t("删除笔记")} beforeDelete={draft.save} onDeleted={() => navigate("/knowledge")} /></div></div><ErrorBox message={error || draft.error} />{draft.error && <button className="ghost" onClick={async () => {
+  return <><div className="detail-top"><div className="actions detail-navigation"><button className="ghost" onClick={goBack}>{t("← 返回上一页")}</button><Link to="/knowledge">{t("知识与资料")}</Link></div><div className="actions"><span className="save-status">{draft.status}</span><button onClick={draft.save}><Save size={15} />{t("保存")}</button><button className="ghost" onClick={draft.download}>{t("下载草稿")}</button><DeleteButton kind="object" id={id} title={form.title} label={t("删除笔记")} beforeDelete={draft.save} onDeleted={() => navigate("/knowledge")} /></div></div><ErrorBox message={error || draft.error} />{draft.error && <div className="actions"><button className="ghost" onClick={loadConflict}>{t("对比并合并团队版本")}</button><button className="ghost" onClick={async () => {
       await draft.discard();
       setInitial(editable(await api(`/objects/${id}`)));
-    }}>{t("放弃本地草稿并加载服务器版本")}</button>}<div className="detail-layout"><section className="panel editor-panel"><div className="flex justify-between items-center"><Badge kind={form.kind} /><div className="segmented"><button className={mode === "edit" ? "active" : ""} onClick={() => setMode("edit")}>{t("编辑")}</button><button className={mode === "preview" ? "active" : ""} onClick={() => setMode("preview")}>{t("阅读")}</button></div></div><input className="title-input" aria-label={t("笔记标题")} value={form.title} onChange={e => update("title", e.target.value)} /><input className="summary-input" aria-label={t("一句话摘要")} placeholder={t("用一句话记录你对它的理解…")} value={form.summary} onChange={e => update("summary", e.target.value)} />{mode === "edit" ? <textarea className="markdown-editor" aria-label={t("笔记正文")} placeholder={t("从一个问题开始。\n\n支持 Markdown、代码块和数学公式，例如 $a_t = \\pi(o_t)$。")} value={form.body_md} onChange={e => update("body_md", e.target.value)} /> : <Markdown sourceUrl={form.source_url} metadata={form.metadata}>{form.body_md}</Markdown>}<div className="editor-footer"><span>{t("Markdown · 公式 · 代码")}</span><button className="ghost" onClick={showHistory}><RotateCcw size={14} />{t("修订历史")}</button></div>{history && <div className="history"><h3>{t("修订历史")}</h3>{history.length ? history.map(r => <div key={r.id} className="history-row"><span>{t("版本 {version} ·", {
+    }}>{t("放弃本地草稿并加载服务器版本")}</button></div>}{remoteConflict && <section className="panel conflict-panel"><div className="section-heading"><div><span className="eyebrow">{t("VERSION CONFLICT")}</span><h2>{t("合并团队版本")} {remoteConflict.version}</h2></div><button onClick={saveMerged}>{t("保存合并结果")}</button></div><p>{t("编辑区保留你的草稿。下面逐项显示服务器版本，可选择采用某个字段，再继续修改后保存。")}</p>{[["title",msg("标题")],["summary",msg("摘要")],["body_md",msg("正文")],["source_url",msg("来源链接")]].map(([key,label]) => <div className="conflict-field" key={key}><strong>{t(label)}</strong><pre>{remoteConflict[key] || t("（空）")}</pre><button className="ghost" onClick={() => update(key, remoteConflict[key])}>{t("此字段采用团队版本")}</button></div>)}</section>}<div className="detail-layout"><section className="panel editor-panel"><div className="flex justify-between items-center"><Badge kind={form.kind} /><div className="segmented"><button className={mode === "edit" ? "active" : ""} onClick={() => setMode("edit")}>{t("编辑")}</button><button className={mode === "preview" ? "active" : ""} onClick={() => setMode("preview")}>{t("阅读")}</button></div></div><input className="title-input" aria-label={t("笔记标题")} value={form.title} onChange={e => update("title", e.target.value)} /><input className="summary-input" aria-label={t("一句话摘要")} placeholder={t("用一句话记录你对它的理解…")} value={form.summary} onChange={e => update("summary", e.target.value)} />{mode === "edit" ? <textarea className="markdown-editor" aria-label={t("笔记正文")} placeholder={t("从一个问题开始。\n\n支持 Markdown、代码块和数学公式，例如 $a_t = \\pi(o_t)$。")} value={form.body_md} onChange={e => update("body_md", e.target.value)} /> : <Markdown sourceUrl={form.source_url} metadata={form.metadata}>{form.body_md}</Markdown>}<div className="editor-footer"><span>{t("Markdown · 公式 · 代码")}</span><button className="ghost" onClick={showHistory}><RotateCcw size={14} />{t("修订历史")}</button></div>{history && <div className="history"><h3>{t("修订历史")}</h3>{history.length ? history.map(r => <div key={r.id} className="history-row"><span>{t("版本 {version} ·", {
                 version: r.version
               })} <DateText value={r.created_at} /></span><button className="ghost" onClick={() => {
               draft.change({
@@ -213,5 +226,5 @@ function KnowledgeDetailInner() {
                 } catch (e) {
                   setError(e.message);
                 }
-              }}>{t("重命名")}</button><DeleteButton kind="attachment" id={a.id} title={a.original_name} /></div></div>)}{!attachments.length && <p className="muted">{t("保存 PDF、图片或小型实验日志。")}</p>}</CollapsiblePanel></aside></div></>;
+              }}>{t("重命名")}</button><DeleteButton kind="attachment" id={a.id} title={a.original_name} /></div></div>)}{!attachments.length && <p className="muted">{t("保存 PDF、图片或小型实验日志。")}</p>}</CollapsiblePanel><CollaborationPanel targetType="object" targetId={id} version={form.version} /></aside></div></>;
 }

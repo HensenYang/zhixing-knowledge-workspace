@@ -1,13 +1,22 @@
 import {test,expect} from '@playwright/test';
 const suffix = crypto.randomUUID().slice(0,8);
 
+test.beforeEach(async({page},testInfo)=>{
+  const email=`record-${suffix}-${testInfo.workerIndex}-${testInfo.repeatEachIndex}@example.test`;
+  const data={email,display_name:'记录测试',password:'browser-test-password'};
+  const registered=await page.request.post('/api/auth/register',{data});
+  if(!registered.ok() && registered.status()!==409) throw new Error(await registered.text());
+  if(registered.status()===409) await page.request.post('/api/auth/login',{data});
+});
+
 async function create(request,title,kind='concept') {
   const response=await request.post('/api/objects',{data:{title,kind,body_md:'保留原有正文',tags:['保留标签'],metadata:{keep:true}}});
   expect(response.ok()).toBeTruthy(); return response.json();
 }
 async function confirm(page) { await page.getByRole('dialog',{name:'确认删除'}).getByRole('button',{name:'确认删除',exact:true}).click(); }
 
-test('trash permanent delete requires confirmation and cannot be restored',async({page,request}) => {
+test('trash permanent delete requires confirmation and cannot be restored',async({page}) => {
+  const request=page.request;
   const obj=await create(request,`永久删除验收 ${suffix}`);
   await request.delete(`/api/objects/${obj.id}`);
   await page.goto('/trash');
@@ -20,7 +29,8 @@ test('trash permanent delete requires confirmation and cannot be restored',async
   expect((await request.post(`/api/trash/object/${obj.id}/restore`,{data:{}})).status()).toBe(404);
 });
 
-test('graph edits nodes and relations, deletes and restores connections',async({page,request}) => {
+test('graph edits nodes and relations, deletes and restores connections',async({page}) => {
+  const request=page.request;
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const a=await create(request,`CRUD${suffix}图谱起点`),b=await create(request,`CRUD${suffix}图谱终点`);
   const relation=await (await request.post('/api/relations',{data:{source_id:a.id,target_id:b.id,relation_type:'uses',evidence:[{source_url:'https://example.com',locator:'第一章'}]}})).json();
@@ -42,7 +52,8 @@ test('graph edits nodes and relations, deletes and restores connections',async({
   expect((await (await request.get('/api/relations')).json()).some(r=>r.id===relation.id)).toBe(true); expect(errors).toEqual([]);
 });
 
-test('canvas rename, log edit and run delete are recoverable',async({page,request}) => {
+test('canvas rename, log edit and run delete are recoverable',async({page}) => {
+  const request=page.request;
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const canvas=await (await request.post('/api/canvases',{data:{title:`CRUD${suffix}画布`}})).json();
   await page.goto('/canvases'); const card=page.locator('.canvas-card').filter({hasText:`CRUD${suffix}画布`});

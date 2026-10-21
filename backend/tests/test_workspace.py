@@ -29,6 +29,10 @@ def client(monkeypatch,tmp_path):
     monkeypatch.setattr(workspace,'STORAGE',tmp_path)
     (tmp_path/'attachments').mkdir()
     with TestClient(workspace.app) as test_client:
+        response=test_client.post('/api/auth/register',json={
+            'email':'owner@example.test','display_name':'测试用户','password':'test-password-123'
+        })
+        assert response.status_code==201,response.text
         yield test_client
     with psycopg2.connect(DSN) as connection:
         with connection.cursor() as cursor:
@@ -41,6 +45,27 @@ def create(client,title='机器人动作',kind='concept'):
 
 def canvas_item(object_id,x=0,parent_id=None):
     return {'id':str(uuid4()),'item_type':'object','object_id':object_id,'parent_id':parent_id,'x':x,'y':0,'width':260,'height':160,'properties':{}}
+
+def test_collaboration_auth_members_comments_reviews_and_isolation(client):
+    me=client.get('/api/auth/me')
+    assert me.status_code==200 and me.json()['email']=='owner@example.test'
+    workspace_id=me.json()['workspaces'][0]['id']
+    item=create(client,'需要协作审核')
+    comment=client.post('/api/comments',json={'target_type':'object','target_id':item['id'],'body':'请补充证据。'})
+    assert comment.status_code==201,comment.text
+    assert client.get(f"/api/comments?target_type=object&target_id={item['id']}").json()[0]['display_name']=='测试用户'
+    review=client.post('/api/reviews',json={'target_type':'object','target_id':item['id'],'target_version':1,'note':'请审核'})
+    assert review.status_code==201,review.text
+    decided=client.patch(f"/api/reviews/{review.json()['id']}",json={'status':'approved','note':'通过'})
+    assert decided.status_code==200 and decided.json()['status']=='approved'
+    second=client.post('/api/auth/register',json={'email':'viewer@example.test','display_name':'查看者','password':'test-password-456'})
+    assert second.status_code==201,second.text
+    client.post('/api/auth/login',json={'email':'owner@example.test','password':'test-password-123'})
+    added=client.post(f'/api/workspaces/{workspace_id}/members',json={'email':'viewer@example.test','role':'viewer'})
+    assert added.status_code==201,added.text
+    client.post('/api/auth/login',json={'email':'viewer@example.test','password':'test-password-456'})
+    assert client.get('/api/objects',headers={'X-Workspace-ID':workspace_id}).status_code==200
+    assert client.post('/api/objects',headers={'X-Workspace-ID':workspace_id},json={'title':'禁止写入'}).status_code==403
 
 def test_unicode_search_revision_conflict_archive(client):
     item=create(client)
@@ -181,6 +206,8 @@ def test_backup_complete_roundtrip_and_conflict(client,monkeypatch,tmp_path):
     (destination/'attachments').mkdir(parents=True)
     monkeypatch.setattr(workspace,'STORAGE',destination)
     try:
+        registered=client.post('/api/auth/register',json={'email':'restore@example.test','display_name':'恢复用户','password':'restore-password-123'})
+        assert registered.status_code==201,registered.text
         preview=client.post('/api/import?dry_run=true',files=files)
         assert preview.status_code==200 and preview.json()['conflicts']=={}
         restored=client.post('/api/import?dry_run=false',files=files)
@@ -281,7 +308,8 @@ def test_permanent_object_delete_cleans_references_and_files(client):
     assert not file_path.exists()
     assert client.post(f"/api/trash/object/{a['id']}/restore").status_code==404
     stored=client.get(f"/api/canvases/{canvas['id']}").json()
-    assert stored['items'][0]['item_type']=='text' and stored['items'][0]['object_id'] is None
+    placeholder=next(item for item in stored['items'] if item['item_type']=='text')
+    assert placeholder['object_id'] is None
     assert stored['edges'][0]['relation_id'] is None
     assert stored['version']==3
     assert client.get('/api/sessions').json()[0]['object_ids']==[b['id']]

@@ -15,10 +15,17 @@ Connect papers, code, datasets, concepts, and experiments into learning paths th
 - Relationship-based reading: explore prerequisites, applications, evidence, and comparisons. The local graph follows the current note and highlights the reading trail.
 - Learning logs, planned and completed experiment records, attachments, a recycle bin, and ZIP backup and restore.
 - Export individual knowledge materials as Markdown, Word, or PDF with sources, relationships, and evidence.
+- User login, isolated team workspaces, owner/editor/reviewer/viewer roles, comments, version reviews, and activity history.
 
 ## Interface language
 
 Use the language selector in the header to switch between Chinese and English. The preference is saved in your browser and synchronized across open tabs. Interface labels, system messages, graph controls, and dates follow the selected language. Your notes, research materials, and model responses keep their original content.
+
+## Multi-user collaboration
+
+After migration `V005`, content is isolated by workspace. The first registered account takes ownership of existing local data. Workspace owners can add already registered users by email and assign owner, editor, reviewer, or viewer roles. Objects and canvases retain optimistic version checks; a 409 conflict preserves the local IndexedDB draft and offers field-level comparison with the team version.
+
+Backups contain the current workspace's knowledge content, not accounts, passwords, sessions, or membership permissions. Remote deployment must serve the frontend and `/api` from the same HTTPS origin, set `COOKIE_SECURE=true`, keep PostgreSQL off the public network, and use persistent storage for attachments. Local development should keep `COOKIE_SECURE=false`.
 
 New interface text must include both translations. See the [localization guide](docs/i18n.md).
 
@@ -26,7 +33,7 @@ New interface text must include both translations. See the [localization guide](
 
 React 18 / Vite 5 / Tailwind CSS, Cytoscape for graphs, and React Flow for canvases; Python / FastAPI; PostgreSQL.
 
-The frontend runs at http://127.0.0.1:5174/ and the backend uses port 8001. Services bind to the local machine by default. This is currently a personal workspace: each collaborator runs an independent instance, and changes are not synchronized automatically.
+The frontend runs at http://127.0.0.1:5174/ and the backend uses port 8001. Services bind to the local machine by default; a shared deployment can host multiple authenticated, workspace-isolated collaborators.
 
 ## Local setup (Windows)
 
@@ -164,7 +171,7 @@ The repository contains framework source code, educational research examples, an
 - IndexedDB: unsubmitted drafts; sessionStorage: the current tab's reading trail.
 - `.env.example`: configuration examples only, with no real credentials.
 
-Keep the GitHub repository private when sharing it or inviting collaborators. A remote deployment serving multiple users requires a separate design for authentication, permissions, and synchronization.
+Keep the GitHub repository private when sharing it or inviting collaborators. The current version detects version conflicts but does not provide character-by-character real-time co-editing.
 
 ## Development and verification
 

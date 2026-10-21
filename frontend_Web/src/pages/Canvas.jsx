@@ -8,6 +8,7 @@ import { api, write } from "../services/api";
 import useDraft from "../hooks/useDraft";
 import { PageTitle, Field, Badge, Empty, ErrorBox, RELATIONS } from "../components/shared";
 import { DeleteButton, useWorkspaceChanges } from "../components/RecordActions";
+import CollaborationPanel from '../components/CollaborationPanel';
 export function CanvasList() {
   useLanguage();
   const [canvases, setCanvases] = useState([]),
@@ -483,5 +484,5 @@ function CanvasEditorInner({
             setHistory(null);
           }}>{t("版本 {version} · 恢复到草稿", {
               version: r.version
-            })}</button>)}</div>}</aside></div></div>;
+            })}</button>)}</div>}</aside></div><CollaborationPanel targetType="canvas" targetId={id} version={doc.version} /></div>;
 }

@@ -4,8 +4,18 @@ import path from 'node:path'
 
 const output=path.resolve('../storage/screenshots')
 fs.mkdirSync(output,{recursive:true})
+const authSuffix=crypto.randomUUID().slice(0,8)
 
-test('knowledge editor autosaves, previews math and retains versioned data',async({page,request})=>{
+test.beforeEach(async({page},testInfo)=>{
+  const email=`workspace-${authSuffix}-${testInfo.workerIndex}-${testInfo.repeatEachIndex}@example.test`
+  const data={email,display_name:'工作区测试',password:'browser-test-password'}
+  const registered=await page.request.post('/api/auth/register',{data})
+  if(!registered.ok()&&registered.status()!==409)throw new Error(await registered.text())
+  if(registered.status()===409)await page.request.post('/api/auth/login',{data})
+})
+
+test('knowledge editor autosaves, previews math and retains versioned data',async({page})=>{
+  const request=page.request
   const errors=[];page.on('pageerror',e=>errors.push(e.message))
   const response=await request.post('/api/objects',{data:{kind:'concept',title:'浏览器验收：动作表示',tags:['验收']}})
   expect(response.ok()).toBeTruthy();const object=await response.json()
@@ -23,7 +33,8 @@ test('knowledge editor autosaves, previews math and retains versioned data',asyn
   expect(errors).toEqual([])
 })
 
-test('canvas connects and edits local edges, groups cards, persists layout and undo',async({page,request})=>{
+test('canvas connects and edits local edges, groups cards, persists layout and undo',async({page})=>{
+  const request=page.request
   const errors=[];page.on('pageerror',e=>errors.push(e.message))
   const a=await (await request.post('/api/objects',{data:{kind:'model',title:'画布验收模型'}})).json()
   const b=await (await request.post('/api/objects',{data:{kind:'concept',title:'画布验收概念'}})).json()
@@ -71,7 +82,8 @@ test('canvas connects and edits local edges, groups cards, persists layout and u
   expect(errors).toEqual([])
 })
 
-test('learning log and experiment can be saved through forms',async({page,request})=>{
+test('learning log and experiment can be saved through forms',async({page})=>{
+  const request=page.request
   const sessionTitle = `浏览器验收学习日志 ${crypto.randomUUID().slice(0,8)}`
   await page.goto('/timeline')
   await page.getByRole('button',{name:'记录一次学习'}).click()

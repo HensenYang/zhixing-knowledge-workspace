@@ -1,11 +1,14 @@
 import { msg } from "../i18n";
 export async function api(path, options = {}) {
+  const workspaceId = localStorage.getItem('knowledge-workspace-id');
   const response = await fetch(`/api${path}`, {
     ...options,
+    credentials: 'same-origin',
     headers: {
       ...(options.body instanceof FormData ? {} : {
         "Content-Type": "application/json"
       }),
+      ...(workspaceId ? {'X-Workspace-ID': workspaceId} : {}),
       ...options.headers
     }
   });
@@ -14,6 +17,7 @@ export async function api(path, options = {}) {
     const error = new Error(typeof result.detail === "string" ? result.detail : result.detail?.message || msg("请求失败，请检查内容与服务状态。"));
     error.status = response.status;
     error.existingImport = result.detail?.existing_import;
+    if (response.status === 401) window.dispatchEvent(new Event('auth-required'));
     throw error;
   }
   return response.json();

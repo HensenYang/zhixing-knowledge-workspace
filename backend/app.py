@@ -1,13 +1,17 @@
 """Local personal knowledge workspace. PostgreSQL is the source of truth."""
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 from uuid import UUID, uuid4
+import base64
 import hashlib
+import hmac
 import io
 import json
+import logging
 import os
 import re
 import secrets
@@ -15,9 +19,9 @@ import shutil
 import zipfile
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, JSONResponse
 from pydantic import BaseModel, Field
 import psycopg2
 from psycopg2 import sql
@@ -40,6 +44,12 @@ STORAGE.mkdir(parents=True, exist_ok=True)
 SCHEMA = os.environ.get('KNOWLEDGE_SCHEMA', 'knowledge')
 app = FastAPI(title='Embodied Knowledge Workspace', version='0.1.0')
 app.include_router(llm_router)
+logger = logging.getLogger('knowledge-workspace')
+SESSION_COOKIE = 'knowledge_session'
+SESSION_DAYS = 30
+current_user_id = ContextVar('current_user_id', default=None)
+current_workspace_id = ContextVar('current_workspace_id', default=None)
+current_workspace_role = ContextVar('current_workspace_role', default=None)
 
 Kind = Literal['concept','resource','repository','model','dataset','benchmark','experiment','question','task']
 RelationType = Literal['depends_on','implements','uses','evaluates','supports','questions','compares_with','related_to']
@@ -48,7 +58,23 @@ TRASH_TABLES = {'object':'objects','relation':'relations','canvas':'canvases',
                 'path':'learning_paths'}
 
 @contextmanager
-def db():
+def raw_db():
+    dsn = os.environ.get('DATABASE_URL')
+    if not dsn:
+        raise HTTPException(503, '数据库尚未配置，请运行数据库初始化脚本。')
+    connection = None
+    try:
+        connection = psycopg2.connect(dsn, connect_timeout=5)
+        with connection:
+            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(sql.SQL('SET LOCAL search_path TO {}, public').format(sql.Identifier(SCHEMA)))
+                yield cursor
+    finally:
+        if connection is not None:
+            connection.close()
+
+@contextmanager
+def db(isolation=None):
     dsn = os.environ.get('DATABASE_URL')
     if not dsn:
         raise HTTPException(503, '数据库尚未配置，请在本机运行 scripts/setup_database.ps1。')
@@ -57,13 +83,22 @@ def db():
         connection = psycopg2.connect(dsn, connect_timeout=5)
         with connection:
             with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                if isolation:
+                    cursor.execute(sql.SQL('SET TRANSACTION ISOLATION LEVEL {}').format(sql.SQL(isolation)))
                 cursor.execute(sql.SQL('SET LOCAL search_path TO {}, public').format(sql.Identifier(SCHEMA)))
+                workspace_id = current_workspace_id.get()
+                user_id = current_user_id.get()
+                if workspace_id:
+                    cursor.execute("SELECT set_config('app.workspace_id',%s,true)",(str(workspace_id),))
+                if user_id:
+                    cursor.execute("SELECT set_config('app.user_id',%s,true)",(str(user_id),))
                 yield cursor
     except psycopg2.IntegrityError:
         raise HTTPException(409, '存在重复记录或无效引用，修改未保存。')
     except psycopg2.OperationalError:
         raise HTTPException(503, '无法连接 PostgreSQL，请检查本地服务与 .env 配置。')
-    except psycopg2.ProgrammingError:
+    except psycopg2.ProgrammingError as error:
+        logger.exception('Database programming error')
         raise HTTPException(503, '数据库结构未就绪，请运行 scripts/migrate.py。')
     finally:
         if connection is not None:
@@ -71,7 +106,10 @@ def db():
 
 def require(cursor, table, identifier):
     active = sql.SQL(' AND deleted_at IS NULL') if table in TRASH_TABLES.values() else sql.SQL('')
-    cursor.execute(sql.SQL('SELECT * FROM {} WHERE id=%s{}').format(sql.Identifier(table),active), (str(identifier),))
+    workspace = sql.SQL(' AND workspace_id=%s') if table == 'learning_paths' else sql.SQL('')
+    parameters = (str(identifier),current_workspace_id.get()) if table == 'learning_paths' else (str(identifier),)
+    cursor.execute(sql.SQL('SELECT * FROM {} WHERE id=%s{}{}').format(
+        sql.Identifier(table),active,workspace),parameters)
     row = cursor.fetchone()
     if not row:
         raise HTTPException(404, '记录不存在。')
@@ -79,6 +117,89 @@ def require(cursor, table, identifier):
 
 def json_value(value):
     return Json(jsonable_encoder(value))
+
+def password_hash(password):
+    if len(password) < 8:
+        raise HTTPException(422,'密码至少需要 8 个字符。')
+    salt = secrets.token_bytes(16)
+    rounds = 310000
+    digest = hashlib.pbkdf2_hmac('sha256',password.encode(),salt,rounds)
+    return f'pbkdf2_sha256${rounds}${base64.b64encode(salt).decode()}${base64.b64encode(digest).decode()}'
+
+def password_matches(password, encoded):
+    try:
+        _, rounds, salt, expected = encoded.split('$',3)
+        digest = hashlib.pbkdf2_hmac('sha256',password.encode(),base64.b64decode(salt),int(rounds))
+        return hmac.compare_digest(base64.b64encode(digest).decode(),expected)
+    except (ValueError,TypeError):
+        return False
+
+def session_hash(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+def require_roles(*roles):
+    if current_workspace_role.get() not in roles:
+        raise HTTPException(403,'当前角色没有执行此操作的权限。')
+
+def user_payload(cursor,user):
+    cursor.execute('''SELECT w.id,w.name,wm.role FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id
+        WHERE wm.user_id=%s ORDER BY wm.joined_at,w.name''',(user['id'],))
+    return {'id':user['id'],'email':user['email'],'display_name':user['display_name'],'workspaces':cursor.fetchall()}
+
+@app.middleware('http')
+async def collaboration_context(request: Request, call_next):
+    path = request.url.path
+    public = (
+        path in {'/api/health','/api/auth/register','/api/auth/login'}
+        or path.startswith('/api/shared/learning-paths/')
+        or not path.startswith('/api/')
+    )
+    if public:
+        return await call_next(request)
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return JSONResponse({'detail':'请先登录。'},status_code=401)
+    try:
+        with raw_db() as cursor:
+            cursor.execute('''SELECT u.* FROM auth_sessions s JOIN users u ON u.id=s.user_id
+                WHERE s.token_hash=%s AND s.expires_at>now()''',(session_hash(token),))
+            user = cursor.fetchone()
+            if not user:
+                return JSONResponse({'detail':'登录已过期，请重新登录。'},status_code=401)
+            requested = request.headers.get('X-Workspace-ID')
+            cursor.execute('''SELECT wm.workspace_id,wm.role FROM workspace_members wm
+                WHERE wm.user_id=%s AND (%s IS NULL OR wm.workspace_id=%s::uuid)
+                ORDER BY wm.joined_at LIMIT 1''',(user['id'],requested,requested))
+            membership = cursor.fetchone()
+            if not membership:
+                return JSONResponse({'detail':'工作区不存在或你不是成员。'},status_code=403)
+    except (psycopg2.Error,HTTPException):
+        return JSONResponse({'detail':'协作数据库尚未就绪，请运行最新迁移。'},status_code=503)
+    user_token = current_user_id.set(user['id'])
+    workspace_token = current_workspace_id.set(membership['workspace_id'])
+    role_token = current_workspace_role.set(membership['role'])
+    try:
+        if request.method not in {'GET','HEAD','OPTIONS'}:
+            collaboration_paths = ('/api/comments','/api/reviews','/api/auth/','/api/workspaces')
+            if not path.startswith(collaboration_paths) and membership['role'] not in {'owner','editor'}:
+                return JSONResponse({'detail':'当前角色只有查看、评论或审核权限。'},status_code=403)
+        response = await call_next(request)
+        response.headers['X-Workspace-ID'] = str(membership['workspace_id'])
+        if request.method not in {'GET','HEAD','OPTIONS'} and response.status_code < 400 and not path.startswith('/api/auth/'):
+            try:
+                pieces = path.strip('/').split('/')
+                target_id = pieces[2] if len(pieces)>2 else None
+                UUID(target_id) if target_id else None
+                with db() as cursor:
+                    cursor.execute('INSERT INTO activity_events(workspace_id,actor_id,action,target_id,metadata) VALUES (%s,%s,%s,%s,%s)',
+                                   (membership['workspace_id'],user['id'],f'{request.method} {path}',target_id,json_value({})))
+            except (ValueError,psycopg2.Error):
+                pass
+        return response
+    finally:
+        current_user_id.reset(user_token)
+        current_workspace_id.reset(workspace_token)
+        current_workspace_role.reset(role_token)
 
 class ObjectInput(BaseModel):
     kind: Kind = 'concept'
@@ -272,10 +393,13 @@ def learning_path_document(cursor, identifier=None, share_token=None):
         cursor.execute('''SELECT * FROM learning_paths WHERE share_token=%s AND status='published'
             AND deleted_at IS NULL''',(share_token,))
     else:
-        cursor.execute('SELECT * FROM learning_paths WHERE id=%s AND deleted_at IS NULL',(str(identifier),))
+        cursor.execute('''SELECT * FROM learning_paths WHERE id=%s AND workspace_id=%s
+            AND deleted_at IS NULL''',(str(identifier),current_workspace_id.get()))
     path=cursor.fetchone()
     if not path:
         raise HTTPException(404,'学习路径不存在或分享已经停止。')
+    if share_token is not None:
+        cursor.execute("SELECT set_config('app.workspace_id',%s,true)",(str(path['workspace_id']),))
     cursor.execute('''SELECT s.*,o.title AS object_title,o.summary AS object_summary,
         o.kind AS object_kind,o.deleted_at AS object_deleted_at
         FROM learning_path_steps s LEFT JOIN objects o ON o.id=s.object_id
@@ -309,7 +433,8 @@ def list_learning_paths():
         cursor.execute('''SELECT p.*,count(s.id)::integer AS step_count,
             COALESCE(sum(s.estimated_minutes),0)::integer AS estimated_minutes
             FROM learning_paths p LEFT JOIN learning_path_steps s ON s.path_id=p.id
-            WHERE p.deleted_at IS NULL GROUP BY p.id ORDER BY p.updated_at DESC''')
+            WHERE p.workspace_id=%s AND p.deleted_at IS NULL
+            GROUP BY p.id ORDER BY p.updated_at DESC''',(current_workspace_id.get(),))
         return cursor.fetchall()
 
 @app.post('/api/learning-paths',status_code=201)
@@ -317,9 +442,11 @@ def create_learning_path(data: LearningPathInput):
     if not data.title.strip():
         raise HTTPException(422,'学习路径标题不能为空。')
     with db() as cursor:
-        cursor.execute('''INSERT INTO learning_paths(title,objective_md,description_md,completion_criteria_md)
-            VALUES (%s,%s,%s,%s) RETURNING *''',
-            (data.title.strip(),data.objective_md,data.description_md,data.completion_criteria_md))
+        cursor.execute('''INSERT INTO learning_paths
+            (workspace_id,title,objective_md,description_md,completion_criteria_md)
+            VALUES (%s,%s,%s,%s,%s) RETURNING *''',
+            (current_workspace_id.get(),data.title.strip(),data.objective_md,
+             data.description_md,data.completion_criteria_md))
         path=cursor.fetchone()
         replace_learning_path_steps(cursor,path['id'],data.steps)
         return learning_path_document(cursor,path['id'])
@@ -328,7 +455,7 @@ def create_learning_path(data: LearningPathInput):
 def shared_learning_path(share_token: str):
     if not re.fullmatch(r'[A-Za-z0-9_-]{16,128}',share_token):
         raise HTTPException(404,'学习路径不存在或分享已经停止。')
-    with db() as cursor:
+    with raw_db() as cursor:
         return learning_path_document(cursor,share_token=share_token)
 
 @app.get('/api/learning-paths/{identifier}')
@@ -343,7 +470,8 @@ def update_learning_path(identifier: UUID,data: LearningPathInput):
     if data.version is None:
         raise HTTPException(422,'保存学习路径需要当前版本号。')
     with db() as cursor:
-        cursor.execute('SELECT * FROM learning_paths WHERE id=%s AND deleted_at IS NULL FOR UPDATE',(str(identifier),))
+        cursor.execute('''SELECT * FROM learning_paths WHERE id=%s AND workspace_id=%s
+            AND deleted_at IS NULL FOR UPDATE''',(str(identifier),current_workspace_id.get()))
         path=cursor.fetchone()
         if not path:
             raise HTTPException(404,'学习路径不存在。')
@@ -376,7 +504,7 @@ def publish_learning_path(identifier: UUID):
 @app.post('/api/learning-paths/{identifier}/unpublish')
 def unpublish_learning_path(identifier: UUID):
     with db() as cursor:
-        require(cursor,'learning_paths',identifier)
+        learning_path_document(cursor,identifier)
         cursor.execute('''UPDATE learning_paths SET status='draft',share_token=NULL,
             version=version+1,updated_at=now() WHERE id=%s AND deleted_at IS NULL RETURNING *''',(str(identifier),))
         return learning_path_document(cursor,identifier)
@@ -384,13 +512,244 @@ def unpublish_learning_path(identifier: UUID):
 @app.delete('/api/learning-paths/{identifier}')
 def delete_learning_path(identifier: UUID):
     with db() as cursor:
-        require(cursor,'learning_paths',identifier)
+        learning_path_document(cursor,identifier)
         cursor.execute('''UPDATE learning_paths SET status='draft',share_token=NULL,deleted_at=now(),
             version=version+1,updated_at=now() WHERE id=%s AND deleted_at IS NULL RETURNING *''',(str(identifier),))
         row=cursor.fetchone()
         if not row:
             raise HTTPException(409,'学习路径已删除，请刷新。')
         return {**row,'trash_kind':'path'}
+
+class AuthInput(BaseModel):
+    email: str = Field(min_length=3,max_length=320)
+    password: str = Field(min_length=8,max_length=256)
+    display_name: str = Field(default='',max_length=100)
+
+def set_login_cookie(response,token):
+    response.set_cookie(SESSION_COOKIE,token,max_age=SESSION_DAYS*86400,httponly=True,
+                        secure=os.environ.get('COOKIE_SECURE','false').lower()=='true',
+                        samesite='lax',path='/')
+
+def create_login(cursor,user_id):
+    token=secrets.token_urlsafe(32)
+    cursor.execute("INSERT INTO auth_sessions(user_id,token_hash,expires_at) VALUES (%s,%s,now()+interval '30 days')",
+                   (user_id,session_hash(token)))
+    return token
+
+@app.post('/api/auth/register',status_code=201)
+def register(data: AuthInput,response: Response):
+    email=data.email.strip().lower()
+    if '@' not in email or not data.display_name.strip():
+        raise HTTPException(422,'请填写有效邮箱和显示名称。')
+    with raw_db() as cursor:
+        cursor.execute('SELECT 1 FROM users WHERE email=%s',(email,))
+        if cursor.fetchone():
+            raise HTTPException(409,'该邮箱已经注册。')
+        cursor.execute('SELECT count(*) AS count FROM users')
+        first=cursor.fetchone()['count']==0
+        cursor.execute('INSERT INTO users(email,display_name,password_hash) VALUES (%s,%s,%s) RETURNING *',
+                       (email,data.display_name.strip(),password_hash(data.password)))
+        user=cursor.fetchone()
+        if first:
+            cursor.execute('SELECT id FROM workspaces ORDER BY created_at LIMIT 1')
+            workspace=cursor.fetchone()
+            if workspace:
+                cursor.execute('UPDATE workspaces SET created_by=%s,name=%s WHERE id=%s',
+                               (user['id'],f"{data.display_name.strip()}的知识空间",workspace['id']))
+                workspace_id=workspace['id']
+            else:
+                cursor.execute('INSERT INTO workspaces(name,created_by) VALUES (%s,%s) RETURNING id',
+                               (f"{data.display_name.strip()}的知识空间",user['id']))
+                workspace_id=cursor.fetchone()['id']
+        else:
+            cursor.execute('INSERT INTO workspaces(name,created_by) VALUES (%s,%s) RETURNING id',
+                           (f"{data.display_name.strip()}的知识空间",user['id']))
+            workspace_id=cursor.fetchone()['id']
+        cursor.execute("INSERT INTO workspace_members(workspace_id,user_id,role) VALUES (%s,%s,'owner')",(workspace_id,user['id']))
+        token=create_login(cursor,user['id'])
+        payload=user_payload(cursor,user)
+    set_login_cookie(response,token)
+    return payload
+
+@app.post('/api/auth/login')
+def login(data: AuthInput,response: Response):
+    with raw_db() as cursor:
+        cursor.execute('SELECT * FROM users WHERE email=%s',(data.email.strip().lower(),))
+        user=cursor.fetchone()
+        if not user or not password_matches(data.password,user['password_hash']):
+            raise HTTPException(401,'邮箱或密码错误。')
+        cursor.execute('DELETE FROM auth_sessions WHERE expires_at<=now()')
+        token=create_login(cursor,user['id'])
+        payload=user_payload(cursor,user)
+    set_login_cookie(response,token)
+    return payload
+
+@app.post('/api/auth/logout')
+def logout(request: Request,response: Response):
+    token=request.cookies.get(SESSION_COOKIE)
+    if token:
+        with raw_db() as cursor:
+            cursor.execute('DELETE FROM auth_sessions WHERE token_hash=%s',(session_hash(token),))
+    response.delete_cookie(SESSION_COOKIE,path='/')
+    return {'ok':True}
+
+@app.get('/api/auth/me')
+def me():
+    with raw_db() as cursor:
+        cursor.execute('SELECT * FROM users WHERE id=%s',(current_user_id.get(),))
+        return user_payload(cursor,cursor.fetchone())
+
+class WorkspaceInput(BaseModel):
+    name: str = Field(min_length=1,max_length=120)
+
+class MemberInput(BaseModel):
+    email: str = Field(min_length=3,max_length=320)
+    role: Literal['owner','editor','reviewer','viewer'] = 'viewer'
+
+class MemberRole(BaseModel):
+    role: Literal['owner','editor','reviewer','viewer']
+
+@app.get('/api/workspaces')
+def list_workspaces():
+    with raw_db() as cursor:
+        cursor.execute('''SELECT w.id,w.name,wm.role,w.created_at FROM workspaces w JOIN workspace_members wm ON wm.workspace_id=w.id
+            WHERE wm.user_id=%s ORDER BY wm.joined_at,w.name''',(current_user_id.get(),))
+        return cursor.fetchall()
+
+@app.post('/api/workspaces',status_code=201)
+def create_workspace(data: WorkspaceInput):
+    with raw_db() as cursor:
+        cursor.execute('INSERT INTO workspaces(name,created_by) VALUES (%s,%s) RETURNING *',(data.name.strip(),current_user_id.get()))
+        workspace=cursor.fetchone()
+        cursor.execute("INSERT INTO workspace_members(workspace_id,user_id,role) VALUES (%s,%s,'owner')",(workspace['id'],current_user_id.get()))
+        return {**workspace,'role':'owner'}
+
+@app.get('/api/workspaces/{identifier}/members')
+def list_members(identifier: UUID):
+    if str(identifier) != str(current_workspace_id.get()):
+        raise HTTPException(403,'请先切换到该工作区。')
+    with raw_db() as cursor:
+        cursor.execute('''SELECT u.id,u.email,u.display_name,wm.role,wm.joined_at FROM workspace_members wm
+            JOIN users u ON u.id=wm.user_id WHERE wm.workspace_id=%s ORDER BY wm.joined_at''',(str(identifier),))
+        return cursor.fetchall()
+
+@app.post('/api/workspaces/{identifier}/members',status_code=201)
+def add_member(identifier: UUID,data: MemberInput):
+    require_roles('owner')
+    if str(identifier) != str(current_workspace_id.get()):
+        raise HTTPException(403,'请先切换到该工作区。')
+    with raw_db() as cursor:
+        cursor.execute('SELECT * FROM users WHERE email=%s',(data.email.strip().lower(),))
+        user=cursor.fetchone()
+        if not user:
+            raise HTTPException(404,'该用户尚未注册，请让对方先创建账号。')
+        cursor.execute('''INSERT INTO workspace_members(workspace_id,user_id,role) VALUES (%s,%s,%s)
+            ON CONFLICT(workspace_id,user_id) DO UPDATE SET role=EXCLUDED.role RETURNING role''',(str(identifier),user['id'],data.role))
+        return {'id':user['id'],'email':user['email'],'display_name':user['display_name'],'role':cursor.fetchone()['role']}
+
+@app.patch('/api/workspaces/{identifier}/members/{user_id}')
+def change_member_role(identifier: UUID,user_id: UUID,data: MemberRole):
+    require_roles('owner')
+    if str(identifier) != str(current_workspace_id.get()) or str(user_id) == str(current_user_id.get()):
+        raise HTTPException(422,'不能在这里修改自己的所有者角色。')
+    with raw_db() as cursor:
+        cursor.execute('UPDATE workspace_members SET role=%s WHERE workspace_id=%s AND user_id=%s RETURNING role',(data.role,str(identifier),str(user_id)))
+        if not cursor.fetchone():
+            raise HTTPException(404,'成员不存在。')
+    return {'ok':True}
+
+TARGET_TABLES={'object':'objects','relation':'relations','canvas':'canvases','session':'learning_sessions','run':'experiment_runs'}
+
+def require_target(cursor,target_type,target_id):
+    table=TARGET_TABLES.get(target_type)
+    if not table:
+        raise HTTPException(422,'不支持的协作目标。')
+    return require(cursor,table,target_id)
+
+class CommentInput(BaseModel):
+    target_type: Literal['object','relation','canvas','session','run']
+    target_id: UUID
+    body: str = Field(min_length=1,max_length=5000)
+    parent_id: UUID | None = None
+
+@app.get('/api/comments')
+def list_comments(target_type: str,target_id: UUID):
+    with db() as cursor:
+        require_target(cursor,target_type,target_id)
+        cursor.execute('''SELECT c.*,u.display_name,u.email,ru.display_name AS resolved_by_name FROM comments c
+            JOIN users u ON u.id=c.author_id LEFT JOIN users ru ON ru.id=c.resolved_by
+            WHERE c.target_type=%s AND c.target_id=%s ORDER BY c.created_at''',(target_type,str(target_id)))
+        return cursor.fetchall()
+
+@app.post('/api/comments',status_code=201)
+def create_comment(data: CommentInput):
+    with db() as cursor:
+        require_target(cursor,data.target_type,data.target_id)
+        if data.parent_id:
+            cursor.execute('SELECT id FROM comments WHERE id=%s AND target_type=%s AND target_id=%s',(str(data.parent_id),data.target_type,str(data.target_id)))
+            if not cursor.fetchone():
+                raise HTTPException(422,'回复的评论不存在。')
+        cursor.execute('''INSERT INTO comments(workspace_id,target_type,target_id,author_id,parent_id,body)
+            VALUES (%s,%s,%s,%s,%s,%s) RETURNING *''',(current_workspace_id.get(),data.target_type,str(data.target_id),current_user_id.get(),str(data.parent_id) if data.parent_id else None,data.body.strip()))
+        return cursor.fetchone()
+
+@app.post('/api/comments/{identifier}/resolve')
+def resolve_comment(identifier: UUID):
+    with db() as cursor:
+        cursor.execute('''UPDATE comments SET resolved_at=CASE WHEN resolved_at IS NULL THEN now() ELSE NULL END,
+            resolved_by=CASE WHEN resolved_at IS NULL THEN %s ELSE NULL END,updated_at=now() WHERE id=%s RETURNING *''',(current_user_id.get(),str(identifier)))
+        row=cursor.fetchone()
+        if not row:
+            raise HTTPException(404,'评论不存在。')
+        return row
+
+class ReviewInput(BaseModel):
+    target_type: Literal['object','relation','canvas','session','run']
+    target_id: UUID
+    target_version: int = Field(ge=1)
+    note: str = Field(default='',max_length=5000)
+
+class ReviewDecision(BaseModel):
+    status: Literal['approved','changes_requested']
+    note: str = Field(default='',max_length=5000)
+
+@app.get('/api/reviews')
+def list_reviews(target_type: str,target_id: UUID):
+    with db() as cursor:
+        require_target(cursor,target_type,target_id)
+        cursor.execute('''SELECT r.*,a.display_name AS requested_by_name,b.display_name AS reviewed_by_name
+            FROM review_requests r JOIN users a ON a.id=r.requested_by LEFT JOIN users b ON b.id=r.reviewed_by
+            WHERE r.target_type=%s AND r.target_id=%s ORDER BY r.created_at DESC''',(target_type,str(target_id)))
+        return cursor.fetchall()
+
+@app.post('/api/reviews',status_code=201)
+def request_review(data: ReviewInput):
+    require_roles('owner','editor')
+    with db() as cursor:
+        target=require_target(cursor,data.target_type,data.target_id)
+        if target.get('version',1) != data.target_version:
+            raise HTTPException(409,'目标已有新版本，请刷新后重新提交审核。')
+        cursor.execute('''INSERT INTO review_requests(workspace_id,target_type,target_id,target_version,requested_by,note)
+            VALUES (%s,%s,%s,%s,%s,%s) RETURNING *''',(current_workspace_id.get(),data.target_type,str(data.target_id),data.target_version,current_user_id.get(),data.note))
+        return cursor.fetchone()
+
+@app.patch('/api/reviews/{identifier}')
+def decide_review(identifier: UUID,data: ReviewDecision):
+    require_roles('owner','reviewer')
+    with db() as cursor:
+        cursor.execute('''UPDATE review_requests SET status=%s,note=%s,reviewed_by=%s,reviewed_at=now()
+            WHERE id=%s AND status='pending' RETURNING *''',(data.status,data.note,current_user_id.get(),str(identifier)))
+        row=cursor.fetchone()
+        if not row:
+            raise HTTPException(404,'待审核记录不存在。')
+        return row
+
+@app.get('/api/activity')
+def activity(limit: int=50,before: int | None=None):
+    with db() as cursor:
+        cursor.execute('''SELECT e.*,u.display_name FROM activity_events e LEFT JOIN users u ON u.id=e.actor_id
+            WHERE (%s IS NULL OR e.id<%s) ORDER BY e.id DESC LIMIT %s''',(before,before,min(max(limit,1),200)))
+        return cursor.fetchall()
 
 @app.get('/api/objects')
 def list_objects(q: str = '', kind: str = '', archived: bool = False, limit: int = 200, offset: int = 0):
@@ -440,6 +799,7 @@ def update_object(identifier: UUID, data: ObjectUpdate):
 @app.get('/api/objects/{identifier}/revisions')
 def revisions(identifier: UUID):
     with db() as cursor:
+        require(cursor,'objects',identifier)
         cursor.execute('SELECT * FROM object_revisions WHERE object_id=%s ORDER BY version DESC', (str(identifier),))
         return cursor.fetchall()
 
@@ -685,6 +1045,7 @@ def save_canvas(identifier: UUID, data: CanvasDocument):
 @app.get('/api/canvases/{identifier}/revisions')
 def canvas_revisions(identifier: UUID):
     with db() as cursor:
+        require(cursor,'canvases',identifier)
         cursor.execute('SELECT * FROM canvas_revisions WHERE canvas_id=%s ORDER BY version DESC', (str(identifier),))
         return cursor.fetchall()
 
@@ -858,7 +1219,10 @@ def list_trash():
     rows=[]
     with db() as cursor:
         for kind,table in TRASH_TABLES.items():
-            cursor.execute(sql.SQL('SELECT * FROM {} WHERE deleted_at IS NOT NULL').format(sql.Identifier(table)))
+            workspace = sql.SQL(' AND workspace_id=%s') if kind == 'path' else sql.SQL('')
+            parameters = (current_workspace_id.get(),) if kind == 'path' else ()
+            cursor.execute(sql.SQL('SELECT * FROM {} WHERE deleted_at IS NOT NULL{}').format(
+                sql.Identifier(table),workspace),parameters)
             for row in cursor.fetchall():
                 title=row.get('title') or row.get('objective') or row.get('original_name') or row.get('hypothesis_md') or ('知识关系' if kind=='relation' else '实验运行')
                 rows.append({'kind':kind,'id':row['id'],'title':title,'deleted_at':row['deleted_at']})
@@ -870,7 +1234,10 @@ def restore_record(kind: str,identifier: UUID):
         raise HTTPException(404,'记录类型不存在。')
     table=TRASH_TABLES[kind]
     with db() as cursor:
-        cursor.execute(sql.SQL('SELECT * FROM {} WHERE id=%s AND deleted_at IS NOT NULL FOR UPDATE').format(sql.Identifier(table)),(str(identifier),))
+        workspace = sql.SQL(' AND workspace_id=%s') if kind == 'path' else sql.SQL('')
+        parameters = (str(identifier),current_workspace_id.get()) if kind == 'path' else (str(identifier),)
+        cursor.execute(sql.SQL('SELECT * FROM {} WHERE id=%s AND deleted_at IS NOT NULL{} FOR UPDATE').format(
+            sql.Identifier(table),workspace),parameters)
         row=cursor.fetchone()
         if not row:
             raise HTTPException(404,'回收站记录不存在。')
@@ -893,7 +1260,10 @@ def permanently_delete(kind: str,identifier: UUID):
         raise HTTPException(404,'记录类型不存在。')
     files=[]
     with db() as cursor:
-        cursor.execute(sql.SQL('SELECT * FROM {} WHERE id=%s AND deleted_at IS NOT NULL FOR UPDATE').format(sql.Identifier(TRASH_TABLES[kind])),(str(identifier),))
+        workspace = sql.SQL(' AND workspace_id=%s') if kind == 'path' else sql.SQL('')
+        parameters = (str(identifier),current_workspace_id.get()) if kind == 'path' else (str(identifier),)
+        cursor.execute(sql.SQL('SELECT * FROM {} WHERE id=%s AND deleted_at IS NOT NULL{} FOR UPDATE').format(
+            sql.Identifier(TRASH_TABLES[kind]),workspace),parameters)
         row=cursor.fetchone()
         if not row:
             raise HTTPException(404,'只能永久删除回收站中的记录。')
@@ -965,6 +1335,7 @@ async def upload_attachment(identifier: UUID,file: UploadFile = File(...)):
 @app.get('/api/objects/{identifier}/attachments')
 def object_attachments(identifier: UUID):
     with db() as cursor:
+        require(cursor,'objects',identifier)
         cursor.execute('SELECT a.* FROM attachments a JOIN object_attachments oa ON oa.attachment_id=a.id WHERE oa.object_id=%s AND a.deleted_at IS NULL', (str(identifier),))
         return cursor.fetchall()
 
@@ -1024,16 +1395,36 @@ TABLES = ['objects','tags','object_tags','relations','relation_evidence','canvas
 BACKUP_V1_TABLES = TABLES[:-3]
 BACKUP_V2_TABLES = TABLES[:-2]
 JSON_FIELDS = {'metadata','viewport','properties','config','environment','metrics','snapshot','extracted_metadata'}
+EXPORT_QUERIES = {
+    'tags':'SELECT DISTINCT t.* FROM tags t JOIN object_tags ot ON ot.tag_id=t.id JOIN objects o ON o.id=ot.object_id',
+    'object_tags':'SELECT ot.* FROM object_tags ot JOIN objects o ON o.id=ot.object_id',
+    'relation_evidence':'SELECT e.* FROM relation_evidence e JOIN relations r ON r.id=e.relation_id',
+    'canvas_items':'SELECT i.* FROM canvas_items i JOIN canvases c ON c.id=i.canvas_id',
+    'canvas_edges':'SELECT e.* FROM canvas_edges e JOIN canvases c ON c.id=e.canvas_id',
+    'session_objects':'SELECT so.* FROM session_objects so JOIN learning_sessions s ON s.id=so.session_id',
+    'run_artifacts':'SELECT a.* FROM run_artifacts a JOIN experiment_runs r ON r.id=a.run_id',
+    'object_attachments':'SELECT oa.* FROM object_attachments oa JOIN objects o ON o.id=oa.object_id',
+    'object_revisions':'SELECT r.* FROM object_revisions r JOIN objects o ON o.id=r.object_id',
+    'canvas_revisions':'SELECT r.* FROM canvas_revisions r JOIN canvases c ON c.id=r.canvas_id',
+    'learning_paths':'SELECT * FROM learning_paths WHERE workspace_id=current_setting(\'app.workspace_id\')::uuid',
+    'learning_path_steps':'SELECT s.* FROM learning_path_steps s JOIN learning_paths p ON p.id=s.path_id WHERE p.workspace_id=current_setting(\'app.workspace_id\')::uuid'
+}
 
 @app.get('/api/export')
 def export_backup():
     output = io.BytesIO()
-    with db() as cursor:
-        cursor.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+    with db('REPEATABLE READ') as cursor:
         tables = {}
         for table in TABLES:
-            cursor.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table)))
-            tables[table] = jsonable_encoder(cursor.fetchall())
+            if table in EXPORT_QUERIES:
+                cursor.execute(EXPORT_QUERIES[table])
+            else:
+                cursor.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table)))
+            rows=jsonable_encoder(cursor.fetchall())
+            for row in rows:
+                for field in ['workspace_id','created_by','updated_by','author_id']:
+                    row.pop(field,None)
+            tables[table] = rows
         manifest = {'format':'embodied-knowledge','version':3,'created_at':datetime.now().isoformat(),'tables':tables,'external_artifacts_included':False}
         with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as archive:
             archive.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False))
