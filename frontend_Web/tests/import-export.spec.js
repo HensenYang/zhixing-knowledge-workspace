@@ -19,8 +19,8 @@ test('source import previews editable metadata and commits after confirmation', 
   await expect(page.getByRole('heading', {name: '资料导入'})).toBeVisible();
   await page.getByLabel('资料地址').fill('https://arxiv.org/abs/2401.01234');
   await page.getByRole('button', {name: '提取并预览'}).click();
-  await expect(page.getByDisplayValue('Imported Paper')).toBeVisible();
-  await page.getByDisplayValue('Imported Paper').fill('Edited Imported Paper');
+  await expect(page.getByRole('textbox', {name: '标题', exact: true})).toHaveValue('Imported Paper');
+  await page.getByRole('textbox', {name: '标题', exact: true}).fill('Edited Imported Paper');
   await page.getByRole('button', {name: '确认并创建知识对象'}).click();
   await expect(page.getByText('资料已导入。')).toBeVisible();
   await expect(page.getByRole('link', {name: '打开已导入资料'})).toHaveAttribute('href', '/knowledge/imported-1');

@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 import psycopg2
 from psycopg2 import sql
 from psycopg2.extras import Json, RealDictCursor
+from backend.llm import router as llm_router
 
 from .exporters import material_docx, material_markdown, material_pdf
 from .importers import import_locator, import_pdf
@@ -35,6 +36,7 @@ STORAGE.mkdir(parents=True, exist_ok=True)
 (STORAGE / 'attachments').mkdir(exist_ok=True)
 SCHEMA = os.environ.get('KNOWLEDGE_SCHEMA', 'knowledge')
 app = FastAPI(title='Embodied Knowledge Workspace', version='0.1.0')
+app.include_router(llm_router)
 
 Kind = Literal['concept','resource','repository','model','dataset','benchmark','experiment','question','task']
 RelationType = Literal['depends_on','implements','uses','evaluates','supports','questions','compares_with','related_to']

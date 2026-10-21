@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
-import { get, set, del } from 'idb-keyval';
+import { t, msg, useLanguage } from "../i18n";
+import { useEffect, useRef, useState } from "react";
+import { get, set, del } from "idb-keyval";
 
 // A failed or conflicting save never discards the local IndexedDB draft.
 export default function useDraft(key, initial, saver, enabled = true) {
+  useLanguage();
   const [value, setValue] = useState(null);
-  const [status, setStatus] = useState('加载中');
-  const [error, setError] = useState('');
+  const [status, setStatus] = useState(msg("加载中"));
+  const [error, setError] = useState("");
   const [tick, setTick] = useState(0);
-  const baseline = useRef('');
+  const baseline = useRef("");
   const current = useRef(null);
   const saving = useRef(false);
   const paused = useRef(false);
@@ -23,25 +25,25 @@ export default function useDraft(key, initial, saver, enabled = true) {
       current.current = restored;
       setValue(restored);
       paused.current = false;
-      setStatus(draft ? '已恢复本地草稿' : '已保存');
+      setStatus(draft ? msg("已恢复本地草稿") : msg("已保存"));
     });
     return () => {
       alive = false;
     };
   }, [key, initial]);
   const change = next => {
-    const updated = typeof next === 'function' ? next(current.current) : next;
+    const updated = typeof next === "function" ? next(current.current) : next;
     current.current = updated;
     setValue(updated);
-    setStatus('未保存');
-    set(key, updated).catch(() => setError('浏览器草稿缓存不可用，请及时保存或下载草稿。'));
+    setStatus(msg("未保存"));
+    set(key, updated).catch(() => setError(msg("浏览器草稿缓存不可用，请及时保存或下载草稿。")));
   };
   async function save() {
     if (saving.current || !current.current) return false;
     const snapshot = current.current;
     saving.current = true;
-    setStatus('保存中');
-    setError('');
+    setStatus(msg("保存中"));
+    setError("");
     try {
       const saved = await saveFn.current(snapshot);
       baseline.current = JSON.stringify(saved);
@@ -53,16 +55,16 @@ export default function useDraft(key, initial, saver, enabled = true) {
       setValue(next);
       if (JSON.stringify(next) === baseline.current) {
         await del(key);
-        setStatus('已保存');
+        setStatus(msg("已保存"));
       } else {
         await set(key, next);
-        setStatus('未保存');
+        setStatus(msg("未保存"));
       }
       paused.current = false;
       return true;
     } catch (e) {
       paused.current = true;
-      setStatus('保存失败 · 草稿保留');
+      setStatus(msg("保存失败 · 草稿保留"));
       setError(e.message);
       return false;
     } finally {
@@ -79,19 +81,19 @@ export default function useDraft(key, initial, saver, enabled = true) {
     const warn = e => {
       if (current.current && JSON.stringify(current.current) !== baseline.current) {
         e.preventDefault();
-        e.returnValue = '';
+        e.returnValue = "";
       }
     };
-    window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
   }, []);
   const download = () => {
     const url = URL.createObjectURL(new Blob([JSON.stringify(current.current, null, 2)], {
-      type: 'application/json'
+      type: "application/json"
     }));
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'workspace-draft.json';
+    a.download = "workspace-draft.json";
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -101,13 +103,13 @@ export default function useDraft(key, initial, saver, enabled = true) {
     current.current = initial;
     baseline.current = JSON.stringify(initial);
     setValue(initial);
-    setError('');
-    setStatus('已保存');
+    setError("");
+    setStatus(msg("已保存"));
   };
   return {
     value,
     change,
-    status,
+    status: t(status),
     error,
     save,
     download,

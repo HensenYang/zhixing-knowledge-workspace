@@ -3,13 +3,33 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": {"dev": "vite --host 127.0.0.1 --port 5174 --strictPort", "build": "vite build", "preview": "vite preview --host 127.0.0.1 --port 5174 --strictPort"},
-  "dependencies": {
-    "react": "18.3.1", "react-dom": "18.3.1", "react-router-dom": "6.30.1",
-    "@xyflow/react": "12.6.0", "cytoscape": "3.31.2",
-    "react-markdown": "9.1.0", "remark-gfm": "4.0.1", "remark-math": "6.0.0", "rehype-katex": "7.0.1", "katex": "0.16.22",
-    "idb-keyval": "6.2.1", "lucide-react": "0.468.0"
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5174 --strictPort",
+    "build": "npm run check:i18n && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 5174 --strictPort",
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "test:i18n": "node --test unit-tests/i18n.test.mjs"
   },
-  "devDependencies": {"vite": "5.4.19", "@vitejs/plugin-react": "4.4.1", "tailwindcss": "3.4.17", "postcss": "8.5.3", "autoprefixer": "10.4.21", "@playwright/test": "1.51.1"}
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.30.1",
+    "@xyflow/react": "12.6.0",
+    "cytoscape": "3.31.2",
+    "react-markdown": "9.1.0",
+    "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0",
+    "rehype-katex": "7.0.1",
+    "katex": "0.16.22",
+    "idb-keyval": "6.2.1",
+    "lucide-react": "0.468.0"
+  },
+  "devDependencies": {
+    "vite": "5.4.19",
+    "@vitejs/plugin-react": "4.4.1",
+    "tailwindcss": "3.4.17",
+    "postcss": "8.5.3",
+    "autoprefixer": "10.4.21",
+    "@playwright/test": "1.51.1"
+  }
 }
-
