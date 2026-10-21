@@ -10,6 +10,7 @@ import io
 import json
 import os
 import re
+import secrets
 import shutil
 import zipfile
 
@@ -38,7 +39,8 @@ app = FastAPI(title='Embodied Knowledge Workspace', version='0.1.0')
 Kind = Literal['concept','resource','repository','model','dataset','benchmark','experiment','question','task']
 RelationType = Literal['depends_on','implements','uses','evaluates','supports','questions','compares_with','related_to']
 TRASH_TABLES = {'object':'objects','relation':'relations','canvas':'canvases',
-                'session':'learning_sessions','run':'experiment_runs','attachment':'attachments'}
+                'session':'learning_sessions','run':'experiment_runs','attachment':'attachments',
+                'path':'learning_paths'}
 
 @contextmanager
 def db():
@@ -99,6 +101,22 @@ class SourceImportCommit(BaseModel):
     source_key: str = Field(min_length=1,max_length=1000)
     extracted_metadata: dict = Field(default_factory=dict)
     object: ObjectInput
+
+class LearningPathStepInput(BaseModel):
+    id: UUID | None = None
+    object_id: UUID | None = None
+    title: str = Field(min_length=1,max_length=500)
+    guidance_md: str = ''
+    completion_criteria_md: str = ''
+    estimated_minutes: int | None = Field(default=None,ge=0,le=100000)
+
+class LearningPathInput(BaseModel):
+    title: str = Field(min_length=1,max_length=500)
+    objective_md: str = ''
+    description_md: str = ''
+    completion_criteria_md: str = ''
+    steps: list[LearningPathStepInput] = Field(default_factory=list,max_length=100)
+    version: int | None = Field(default=None,ge=1)
 
 def validate_object(data):
     if not data.title.strip():
@@ -176,6 +194,131 @@ def commit_source_import(data: SourceImportCommit):
             VALUES (%s,%s,%s,%s,%s,%s)''',
             (data.source_type,data.source_key,item.source_url,data.extracted_metadata.get('file_name'),json_value(data.extracted_metadata),row['id']))
         return object_with_tags(cursor,row)
+
+def learning_path_document(cursor, identifier=None, share_token=None):
+    if share_token is not None:
+        cursor.execute('''SELECT * FROM learning_paths WHERE share_token=%s AND status='published'
+            AND deleted_at IS NULL''',(share_token,))
+    else:
+        cursor.execute('SELECT * FROM learning_paths WHERE id=%s AND deleted_at IS NULL',(str(identifier),))
+    path=cursor.fetchone()
+    if not path:
+        raise HTTPException(404,'学习路径不存在或分享已经停止。')
+    cursor.execute('''SELECT s.*,o.title AS object_title,o.summary AS object_summary,
+        o.kind AS object_kind,o.deleted_at AS object_deleted_at
+        FROM learning_path_steps s LEFT JOIN objects o ON o.id=s.object_id
+        WHERE s.path_id=%s ORDER BY s.position''',(path['id'],))
+    steps=cursor.fetchall()
+    for step in steps:
+        object_deleted_at=step.pop('object_deleted_at')
+        step['object_available']=step['object_id'] is not None and object_deleted_at is None
+    return {**path,'steps':steps}
+
+def replace_learning_path_steps(cursor, path_id, steps):
+    step_ids=[step.id or uuid4() for step in steps]
+    if len(step_ids) != len(set(step_ids)):
+        raise HTTPException(422,'学习步骤 ID 不能重复。')
+    for step in steps:
+        if not step.title.strip():
+            raise HTTPException(422,'学习步骤标题不能为空。')
+        if step.object_id is not None:
+            require(cursor,'objects',step.object_id)
+    cursor.execute('DELETE FROM learning_path_steps WHERE path_id=%s',(str(path_id),))
+    for position,(step,step_id) in enumerate(zip(steps,step_ids)):
+        cursor.execute('''INSERT INTO learning_path_steps
+            (id,path_id,object_id,position,title,guidance_md,completion_criteria_md,estimated_minutes)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)''',
+            (str(step_id),str(path_id),str(step.object_id) if step.object_id else None,position,
+             step.title.strip(),step.guidance_md,step.completion_criteria_md,step.estimated_minutes))
+
+@app.get('/api/learning-paths')
+def list_learning_paths():
+    with db() as cursor:
+        cursor.execute('''SELECT p.*,count(s.id)::integer AS step_count,
+            COALESCE(sum(s.estimated_minutes),0)::integer AS estimated_minutes
+            FROM learning_paths p LEFT JOIN learning_path_steps s ON s.path_id=p.id
+            WHERE p.deleted_at IS NULL GROUP BY p.id ORDER BY p.updated_at DESC''')
+        return cursor.fetchall()
+
+@app.post('/api/learning-paths',status_code=201)
+def create_learning_path(data: LearningPathInput):
+    if not data.title.strip():
+        raise HTTPException(422,'学习路径标题不能为空。')
+    with db() as cursor:
+        cursor.execute('''INSERT INTO learning_paths(title,objective_md,description_md,completion_criteria_md)
+            VALUES (%s,%s,%s,%s) RETURNING *''',
+            (data.title.strip(),data.objective_md,data.description_md,data.completion_criteria_md))
+        path=cursor.fetchone()
+        replace_learning_path_steps(cursor,path['id'],data.steps)
+        return learning_path_document(cursor,path['id'])
+
+@app.get('/api/shared/learning-paths/{share_token}')
+def shared_learning_path(share_token: str):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{16,128}',share_token):
+        raise HTTPException(404,'学习路径不存在或分享已经停止。')
+    with db() as cursor:
+        return learning_path_document(cursor,share_token=share_token)
+
+@app.get('/api/learning-paths/{identifier}')
+def get_learning_path(identifier: UUID):
+    with db() as cursor:
+        return learning_path_document(cursor,identifier)
+
+@app.put('/api/learning-paths/{identifier}')
+def update_learning_path(identifier: UUID,data: LearningPathInput):
+    if not data.title.strip():
+        raise HTTPException(422,'学习路径标题不能为空。')
+    if data.version is None:
+        raise HTTPException(422,'保存学习路径需要当前版本号。')
+    with db() as cursor:
+        cursor.execute('SELECT * FROM learning_paths WHERE id=%s AND deleted_at IS NULL FOR UPDATE',(str(identifier),))
+        path=cursor.fetchone()
+        if not path:
+            raise HTTPException(404,'学习路径不存在。')
+        if path['version'] != data.version:
+            raise HTTPException(409,'另一标签页已经修改这条学习路径，请刷新后合并。')
+        cursor.execute('''UPDATE learning_paths SET title=%s,objective_md=%s,description_md=%s,
+            completion_criteria_md=%s,version=version+1,updated_at=now()
+            WHERE id=%s RETURNING *''',
+            (data.title.strip(),data.objective_md,data.description_md,data.completion_criteria_md,str(identifier)))
+        replace_learning_path_steps(cursor,identifier,data.steps)
+        return learning_path_document(cursor,identifier)
+
+@app.post('/api/learning-paths/{identifier}/publish')
+def publish_learning_path(identifier: UUID):
+    with db() as cursor:
+        path=learning_path_document(cursor,identifier)
+        if not path['objective_md'].strip():
+            raise HTTPException(422,'发布前请填写学习目标。')
+        if not path['completion_criteria_md'].strip():
+            raise HTTPException(422,'发布前请填写整条路径的完成条件。')
+        if not path['steps']:
+            raise HTTPException(422,'发布前请至少添加一个学习步骤。')
+        if any(not step['completion_criteria_md'].strip() for step in path['steps']):
+            raise HTTPException(422,'发布前请为每个学习步骤填写完成条件。')
+        token=path['share_token'] or secrets.token_urlsafe(18)
+        cursor.execute('''UPDATE learning_paths SET status='published',share_token=%s,
+            version=version+1,updated_at=now() WHERE id=%s RETURNING *''',(token,str(identifier)))
+        return learning_path_document(cursor,identifier)
+
+@app.post('/api/learning-paths/{identifier}/unpublish')
+def unpublish_learning_path(identifier: UUID):
+    with db() as cursor:
+        require(cursor,'learning_paths',identifier)
+        cursor.execute('''UPDATE learning_paths SET status='draft',share_token=NULL,
+            version=version+1,updated_at=now() WHERE id=%s AND deleted_at IS NULL RETURNING *''',(str(identifier),))
+        return learning_path_document(cursor,identifier)
+
+@app.delete('/api/learning-paths/{identifier}')
+def delete_learning_path(identifier: UUID):
+    with db() as cursor:
+        require(cursor,'learning_paths',identifier)
+        cursor.execute('''UPDATE learning_paths SET status='draft',share_token=NULL,deleted_at=now(),
+            version=version+1,updated_at=now() WHERE id=%s AND deleted_at IS NULL RETURNING *''',(str(identifier),))
+        row=cursor.fetchone()
+        if not row:
+            raise HTTPException(409,'学习路径已删除，请刷新。')
+        return {**row,'trash_kind':'path'}
 
 @app.get('/api/objects')
 def list_objects(q: str = '', kind: str = '', archived: bool = False, limit: int = 200, offset: int = 0):
@@ -793,8 +936,9 @@ def export_material(identifier: UUID, format: Literal['md','docx','pdf']='md'):
         return Response(material_docx(markdown),media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',headers=headers)
     return Response(material_pdf(markdown),media_type='application/pdf',headers=headers)
 
-TABLES = ['objects','tags','object_tags','relations','relation_evidence','canvases','canvas_items','canvas_edges','learning_sessions','session_objects','experiment_runs','run_artifacts','attachments','object_attachments','object_revisions','canvas_revisions','source_imports']
-BACKUP_V1_TABLES = TABLES[:-1]
+TABLES = ['objects','tags','object_tags','relations','relation_evidence','canvases','canvas_items','canvas_edges','learning_sessions','session_objects','experiment_runs','run_artifacts','attachments','object_attachments','object_revisions','canvas_revisions','source_imports','learning_paths','learning_path_steps']
+BACKUP_V1_TABLES = TABLES[:-3]
+BACKUP_V2_TABLES = TABLES[:-2]
 JSON_FIELDS = {'metadata','viewport','properties','config','environment','metrics','snapshot','extracted_metadata'}
 
 @app.get('/api/export')
@@ -806,7 +950,7 @@ def export_backup():
         for table in TABLES:
             cursor.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table)))
             tables[table] = jsonable_encoder(cursor.fetchall())
-        manifest = {'format':'embodied-knowledge','version':2,'created_at':datetime.now().isoformat(),'tables':tables,'external_artifacts_included':False}
+        manifest = {'format':'embodied-knowledge','version':3,'created_at':datetime.now().isoformat(),'tables':tables,'external_artifacts_included':False}
         with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as archive:
             archive.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False))
             for item in tables['attachments']:
@@ -830,12 +974,16 @@ def inspect_backup(content):
         table_names=set(manifest.get('tables',{}))
         if manifest.get('format') != 'embodied-knowledge' or not (
             (version == 1 and table_names == set(BACKUP_V1_TABLES)) or
-            (version == 2 and table_names == set(TABLES))
+            (version == 2 and table_names == set(BACKUP_V2_TABLES)) or
+            (version == 3 and table_names == set(TABLES))
         ):
             raise HTTPException(422,'备份格式或版本不支持。')
         tables = manifest['tables']
         if version == 1:
             tables['source_imports']=[]
+        if version in (1,2):
+            tables['learning_paths']=[]
+            tables['learning_path_steps']=[]
         if not all(isinstance(rows,list) and all(isinstance(row,dict) for row in rows) for rows in tables.values()):
             raise HTTPException(422,'备份表结构无效。')
         for item in tables['attachments']:

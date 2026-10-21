@@ -8,7 +8,8 @@ const labels = {
   canvas: '画布',
   session: '学习记录',
   run: '实验运行',
-  attachment: '附件'
+  attachment: '附件',
+  path: '学习路径'
 };
 export default function Trash() {
   const [rows, setRows] = useState([]),

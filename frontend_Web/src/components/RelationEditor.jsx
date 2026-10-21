@@ -6,7 +6,8 @@ export default function RelationEditor({
   objects,
   initial,
   source,
-  onDone
+  onDone,
+  showTitle = true
 }) {
   const [form, setForm] = useState(initial || {
     source_id: source || objects[0]?.id || '',
@@ -39,7 +40,7 @@ export default function RelationEditor({
       setBusy(false);
     }
   }
-  return <form className="relation-form" onSubmit={save}><h3>{initial ? '编辑关系' : '建立知识关系'}</h3><Field label="起点"><select value={form.source_id} onChange={e => change('source_id', e.target.value)}>{objects.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}</select></Field><Field label="关系"><select value={form.relation_type} onChange={e => change('relation_type', e.target.value)}>{Object.entries(RELATIONS).map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select></Field><Field label="终点"><select value={form.target_id} onChange={e => change('target_id', e.target.value)}>{objects.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}</select></Field><Field label="为什么建立这条关系？"><textarea value={form.description} onChange={e => change('description', e.target.value)} rows={3} /></Field><details><summary>添加证据与定位</summary><Field label="证据对象"><select value={evidence.evidence_object_id || ''} onChange={e => change('evidence', [{
+  return <form className="relation-form" onSubmit={save}>{showTitle && <h3>{initial ? '编辑关系' : '建立知识关系'}</h3>}<Field label="起点"><select value={form.source_id} onChange={e => change('source_id', e.target.value)}>{objects.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}</select></Field><Field label="关系"><select value={form.relation_type} onChange={e => change('relation_type', e.target.value)}>{Object.entries(RELATIONS).map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select></Field><Field label="终点"><select value={form.target_id} onChange={e => change('target_id', e.target.value)}>{objects.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}</select></Field><Field label="为什么建立这条关系？"><textarea value={form.description} onChange={e => change('description', e.target.value)} rows={3} /></Field><details><summary>添加证据与定位</summary><Field label="证据对象"><select value={evidence.evidence_object_id || ''} onChange={e => change('evidence', [{
           ...evidence,
           evidence_object_id: e.target.value || null
         }])}><option value="">不选择</option>{objects.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}</select></Field><Field label="来源地址"><input value={evidence.source_url || ''} onChange={e => change('evidence', [{

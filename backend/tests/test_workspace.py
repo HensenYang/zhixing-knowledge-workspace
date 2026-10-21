@@ -123,6 +123,33 @@ def test_sessions_and_run_validation(client):
     assert client.get('/api/runs').json()[0]['artifacts'][0]['location']=='experiments/result.log'
     assert client.patch(f"/api/runs/{run.json()['id']}",json={**run.json(),'status':'succeeded','result_md':'运行完成'}).status_code==200
 
+def test_learning_path_publish_share_and_revoke(client):
+    concept=create(client,'VLA 基础')
+    created=client.post('/api/learning-paths',json={
+        'title':'VLA 入门路径',
+        'steps':[{'object_id':concept['id'],'title':'理解 VLA 基础'}],
+    })
+    assert created.status_code==201,created.text
+    path=created.json()
+    assert client.post(f"/api/learning-paths/{path['id']}/publish").status_code==422
+    saved=client.put(f"/api/learning-paths/{path['id']}",json={
+        **path,
+        'objective_md':'能够解释视觉、语言与动作之间的关系。',
+        'completion_criteria_md':'能够独立画出端到端数据流。',
+        'steps':[{**path['steps'][0],'completion_criteria_md':'不看笔记解释输入和输出。'}],
+    })
+    assert saved.status_code==200,saved.text
+    published=client.post(f"/api/learning-paths/{path['id']}/publish")
+    assert published.status_code==200,published.text
+    token=published.json()['share_token']
+    shared=client.get(f'/api/shared/learning-paths/{token}')
+    assert shared.status_code==200 and shared.json()['steps'][0]['object_available'] is True
+    assert client.post(f"/api/learning-paths/{path['id']}/unpublish").status_code==200
+    assert client.get(f'/api/shared/learning-paths/{token}').status_code==404
+    assert client.delete(f"/api/learning-paths/{path['id']}").status_code==200
+    assert any(row['kind']=='path' for row in client.get('/api/trash').json())
+    assert client.post(f"/api/trash/path/{path['id']}/restore").status_code==200
+
 def test_backup_complete_roundtrip_and_conflict(client,monkeypatch,tmp_path):
     a,b=create(client,'模型'),create(client,'论文','resource')
     client.patch(f"/api/objects/{a['id']}",json={**a,'title':'模型修订'})
