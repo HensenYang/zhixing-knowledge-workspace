@@ -228,6 +228,78 @@ async def import_github(source: str) -> dict:
     )
 
 
+def _pdf_text_stats(text: str) -> dict[str, float | int]:
+    """Measure whether extracted PDF text was split into many tiny lines."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return {
+            "line_count": 0,
+            "single_token_ratio": 0.0,
+            "short_line_ratio": 0.0,
+            "median_chars": 0.0,
+            "nonspace_chars": 0,
+        }
+
+    character_counts = sorted(len(re.sub(r"\s+", "", line)) for line in lines)
+    middle = len(character_counts) // 2
+    if len(character_counts) % 2:
+        median_chars = float(character_counts[middle])
+    else:
+        median_chars = (character_counts[middle - 1] + character_counts[middle]) / 2
+    single_token_lines = sum(len(re.findall(r"\S+", line)) == 1 for line in lines)
+    short_lines = sum(character_count <= 20 for character_count in character_counts)
+    return {
+        "line_count": len(lines),
+        "single_token_ratio": single_token_lines / len(lines),
+        "short_line_ratio": short_lines / len(lines),
+        "median_chars": median_chars,
+        "nonspace_chars": sum(character_counts),
+    }
+
+
+def _pdf_text_is_fragmented(text: str) -> bool:
+    stats = _pdf_text_stats(text)
+    return bool(
+        stats["line_count"] >= 20
+        and stats["single_token_ratio"] >= 0.60
+        and stats["short_line_ratio"] >= 0.70
+        and stats["median_chars"] <= 15
+    )
+
+
+def _normalize_pdf_layout_text(text: str) -> str:
+    """Remove layout-mode spacing while preserving paragraphs and page structure."""
+    normalized_lines = [
+        re.sub(r"[^\S\r\n]+", " ", line).strip()
+        for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    ]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(normalized_lines)).strip()
+
+
+def _pdf_layout_is_better(plain_text: str, layout_text: str) -> bool:
+    if not layout_text:
+        return False
+    plain_stats = _pdf_text_stats(plain_text)
+    layout_stats = _pdf_text_stats(layout_text)
+    plain_characters = int(plain_stats["nonspace_chars"])
+    retained_characters = (
+        int(layout_stats["nonspace_chars"]) / plain_characters
+        if plain_characters
+        else 0.0
+    )
+    fragmentation_improvement = (
+        float(plain_stats["single_token_ratio"])
+        - float(layout_stats["single_token_ratio"])
+    )
+    line_reduction = (
+        int(layout_stats["line_count"]) <= int(plain_stats["line_count"]) * 0.60
+    )
+    return bool(
+        retained_characters >= 0.85
+        and (fragmentation_improvement >= 0.25 or line_reduction)
+    )
+
+
 def import_pdf(content: bytes, filename: str) -> dict:
     if not content:
         raise HTTPException(422, "PDF 文件为空。")
@@ -241,8 +313,21 @@ def import_pdf(content: bytes, filename: str) -> dict:
             raise HTTPException(422, "暂不支持加密 PDF。")
         metadata = reader.metadata or {}
         pages = []
+        layout_reflow_pages = []
         for index, page in enumerate(reader.pages, start=1):
-            text = (page.extract_text() or "").strip()
+            plain_text = (page.extract_text() or "").strip()
+            text = plain_text
+            if _pdf_text_is_fragmented(plain_text):
+                try:
+                    layout_text = _normalize_pdf_layout_text(
+                        page.extract_text(extraction_mode="layout") or ""
+                    )
+                except Exception:
+                    # A malformed layout stream should not discard usable plain text.
+                    layout_text = ""
+                if _pdf_layout_is_better(plain_text, layout_text):
+                    text = layout_text
+                    layout_reflow_pages.append(index)
             if text:
                 pages.append(f"## 第 {index} 页\n\n{text}")
     except HTTPException:
@@ -252,6 +337,12 @@ def import_pdf(content: bytes, filename: str) -> dict:
     warnings = []
     if not pages:
         warnings.append("未提取到正文；扫描版 PDF 需要 OCR，当前版本不会自动识别图片文字。")
+    if layout_reflow_pages:
+        page_list = "、".join(str(page) for page in layout_reflow_pages)
+        warnings.append(
+            f"检测到 PDF 文字层按词碎片化，已按页面布局自动重排第 {page_list} 页；"
+            "表格、多栏或代码排版可能仍需在保存前检查。"
+        )
     digest = hashlib.sha256(content).hexdigest()
     title = _clean(metadata.get("/Title")) or filename.rsplit(".", 1)[0]
     author = _clean(metadata.get("/Author"))
@@ -262,6 +353,8 @@ def import_pdf(content: bytes, filename: str) -> dict:
         metadata={
             "subtype": "paper", "file_name": filename, "pages": len(reader.pages),
             "authors": author, "sha256": digest, "import_provider": "pypdf",
+            "pdf_extraction_mode": "adaptive-layout" if layout_reflow_pages else "plain",
+            "layout_reflow_pages": layout_reflow_pages,
         },
     )
 

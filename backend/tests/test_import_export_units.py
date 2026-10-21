@@ -51,6 +51,35 @@ def test_pdf_import_extracts_text_and_metadata():
     assert preview['title'] == 'Import Test'
     assert 'lightweight import test' in preview['body_md']
     assert preview['metadata']['pages'] == 1
+    assert preview['metadata']['pdf_extraction_mode'] == 'plain'
+    assert preview['metadata']['layout_reflow_pages'] == []
+    assert not any('碎片化' in warning for warning in preview['warnings'])
+
+
+def test_pdf_import_reflows_fragmented_word_lines():
+    output = io.BytesIO()
+    document = canvas.Canvas(output)
+    words = (
+        'This personal reflection document should remain one coherent sentence '
+        'after importing because separate word lines make research notes difficult '
+        'to read review connect annotate share export and reuse across projects'
+    ).split()
+    x, y = 72, 760
+    for word in words:
+        width = document.stringWidth(word)
+        if x + width > 520:
+            x, y = 72, y - 24
+        document.drawString(x, y, word)
+        x += width + 10
+    document.save()
+
+    preview = import_pdf(output.getvalue(), 'fragmented.pdf')
+
+    assert 'This personal reflection document should remain one coherent sentence' in preview['body_md']
+    assert '\nThis\npersonal\nreflection\n' not in preview['body_md']
+    assert preview['metadata']['pdf_extraction_mode'] == 'adaptive-layout'
+    assert preview['metadata']['layout_reflow_pages'] == [1]
+    assert any('碎片化' in warning for warning in preview['warnings'])
 
 
 def test_source_detection_is_limited_to_supported_sources():
