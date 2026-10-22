@@ -1,46 +1,16 @@
 import io
 import json
-import os
-from pathlib import Path
 from uuid import uuid4
 import zipfile
 
 import psycopg2
 from psycopg2 import sql
 import pytest
-from fastapi.testclient import TestClient
+
 import backend.app as workspace
+from helpers import DSN, canvas_item, create, migrate_schema, wait_for_job
 
-DSN = os.environ.get('TEST_DATABASE_URL')
 pytestmark = pytest.mark.skipif(not DSN, reason='Only run against an explicitly configured isolated test database.')
-MIGRATIONS = sorted((Path(__file__).resolve().parents[2] / 'database/migrations').glob('V*.sql'))
-def migrate_schema(cursor,schema):
-    for migration in MIGRATIONS:
-        cursor.execute(migration.read_text(encoding='utf-8').replace('knowledge.',f'{schema}.').replace('CREATE SCHEMA knowledge;',f'CREATE SCHEMA {schema};'))
-
-@pytest.fixture
-def client(monkeypatch,tmp_path):
-    schema = 'test_' + uuid4().hex
-    with psycopg2.connect(DSN) as connection:
-        with connection.cursor() as cursor:
-            migrate_schema(cursor,schema)
-    monkeypatch.setenv('DATABASE_URL',DSN)
-    monkeypatch.setattr(workspace,'SCHEMA',schema)
-    monkeypatch.setattr(workspace,'STORAGE',tmp_path)
-    (tmp_path/'attachments').mkdir()
-    with TestClient(workspace.app) as test_client:
-        yield test_client
-    with psycopg2.connect(DSN) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
-
-def create(client,title='机器人动作',kind='concept'):
-    response=client.post('/api/objects',json={'title':title,'kind':kind,'body_md':'中文笔记 $a_t=\\pi(o_t)$','tags':['机器人','VLA']})
-    assert response.status_code==201,response.text
-    return response.json()
-
-def canvas_item(object_id,x=0,parent_id=None):
-    return {'id':str(uuid4()),'item_type':'object','object_id':object_id,'parent_id':parent_id,'x':x,'y':0,'width':260,'height':160,'properties':{}}
 
 def test_unicode_search_revision_conflict_archive(client):
     item=create(client)
@@ -156,8 +126,10 @@ def test_backup_complete_roundtrip_and_conflict(client,monkeypatch,tmp_path):
     try:
         preview=client.post('/api/import?dry_run=true',files=files)
         assert preview.status_code==200 and preview.json()['conflicts']=={}
-        restored=client.post('/api/import?dry_run=false',files=files)
-        assert restored.status_code==200,restored.text
+        started=client.post('/api/import?dry_run=false',files=files)
+        assert started.status_code==202,started.text
+        job=wait_for_job(client,started.json()['job_id'])
+        assert job['status']=='succeeded' and job['progress']==100 and job['result']['restored'] is True,job
         assert client.get(f"/api/objects/{a['id']}").json()['title']=='模型修订'
         assert client.get(f"/api/attachments/{upload.json()['id']}").content==content
         assert client.get(f"/api/canvases/{canvas['id']}").json()['viewport']['x']==23
@@ -191,7 +163,7 @@ def test_malformed_backup_and_attachment_integrity(client):
 
 def test_edit_and_recover_records_preserves_references(client):
     a,b=create(client,'待删除节点'),create(client,'关联节点')
-    relation=client.post('/api/relations',json={'source_id':a['id'],'target_id':b['id'],'relation_type':'uses','evidence':[{'source_url':'https://example.com','locator':'第2页'}]}).json()
+    client.post('/api/relations',json={'source_id':a['id'],'target_id':b['id'],'relation_type':'uses','evidence':[{'source_url':'https://example.com','locator':'第2页'}]})
     canvas=client.post('/api/canvases',json={'title':'原画布'}).json()
     renamed=client.patch(f"/api/canvases/{canvas['id']}",json={'title':'新画布','version':1})
     assert renamed.status_code==200 and renamed.json()['version']==2
@@ -244,8 +216,8 @@ def test_permanent_object_delete_cleans_references_and_files(client):
     assert client.put(f"/api/canvases/{canvas['id']}/document",json=doc).status_code==200
     attachment=client.post(f"/api/objects/{a['id']}/attachments",files={'file':('delete.txt',b'content')}).json()
     file_path=workspace.STORAGE/attachment['relative_path']
-    session=client.post('/api/sessions',json={'objective':'保留学习','object_ids':[a['id'],b['id']]}).json()
-    run=client.post('/api/runs',json={'experiment_id':a['id']}).json()
+    client.post('/api/sessions',json={'objective':'保留学习','object_ids':[a['id'],b['id']]}).json()
+    client.post('/api/runs',json={'experiment_id':a['id']}).json()
     assert client.delete(f"/api/trash/object/{a['id']}").status_code==404
     assert file_path.exists()
     assert client.delete(f"/api/objects/{a['id']}").status_code==200
@@ -254,7 +226,8 @@ def test_permanent_object_delete_cleans_references_and_files(client):
     assert not file_path.exists()
     assert client.post(f"/api/trash/object/{a['id']}/restore").status_code==404
     stored=client.get(f"/api/canvases/{canvas['id']}").json()
-    assert stored['items'][0]['item_type']=='text' and stored['items'][0]['object_id'] is None
+    removed=next(item for item in stored['items'] if item['id']==items[0]['id'])
+    assert removed['item_type']=='text' and removed['object_id'] is None
     assert stored['edges'][0]['relation_id'] is None
     assert stored['version']==3
     assert client.get('/api/sessions').json()[0]['object_ids']==[b['id']]
@@ -279,7 +252,7 @@ def test_permanent_record_delete(client,kind,path):
     assert client.get(f"/api/objects/{obj['id']}").status_code==200
 
 def test_invalid_reference_rolls_back_complete_import(client):
-    item=create(client)
+    create(client)
     exported=zipfile.ZipFile(io.BytesIO(client.get('/api/export').content))
     manifest=json.loads(exported.read('manifest.json'))
     manifest['tables']['objects'][0]['id']=str(uuid4())
@@ -290,5 +263,7 @@ def test_invalid_reference_rolls_back_complete_import(client):
     with zipfile.ZipFile(output,'w') as archive:
         archive.writestr('manifest.json',json.dumps(manifest))
     response=client.post('/api/import?dry_run=false',files={'file':('invalid.zip',output.getvalue())})
-    assert response.status_code==409,response.text
+    assert response.status_code==202,response.text
+    job=wait_for_job(client,response.json()['job_id'])
+    assert job['status']=='failed' and '无效引用' in job['error'],job
     assert len(client.get('/api/objects').json())==1

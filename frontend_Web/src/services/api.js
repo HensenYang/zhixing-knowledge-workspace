@@ -1,4 +1,4 @@
-export async function api(path, options = {}) {
+async function request(path, options = {}) {
   const response = await fetch(`/api${path}`, {
     ...options,
     headers: {
@@ -14,7 +14,20 @@ export async function api(path, options = {}) {
     error.status = response.status;
     throw error;
   }
-  return response.json();
+  return response;
+}
+export async function api(path, options = {}) {
+  return (await request(path, options)).json();
+}
+// List endpoints return plain JSON plus the number of matching records in X-Total-Count.
+export async function apiPage(path, options = {}) {
+  const response = await request(path, options);
+  const items = await response.json();
+  const total = Number(response.headers.get('X-Total-Count'));
+  return {
+    items,
+    total: Number.isFinite(total) && response.headers.has('X-Total-Count') ? total : (Array.isArray(items) ? items.length : 0)
+  };
 }
 export const write = (path, data, method = 'POST') => api(path, {
   method,

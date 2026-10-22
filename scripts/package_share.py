@@ -11,7 +11,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from backend.app import export_backup, inspect_backup
+from backend.api.backup import export_backup, inspect_backup
 
 DATE = '2026-10-20'
 PREFIX = 'Embodied-Knowledge-Workspace/'

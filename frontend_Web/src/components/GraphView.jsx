@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import cytoscape from 'cytoscape';
-import { api } from '../services/api';
+import { apiPage } from '../services/api';
 import { COLORS, RELATIONS, Empty, ErrorBox } from './shared';
+// The layout runs in the browser and slows sharply as nodes are added (about 15 s for 1000), so the whole graph
+// shows the best-connected nodes only; a local graph around one note is not capped.
+const WHOLE_GRAPH_NODES = 300;
 export default function GraphView({
   center,
   depth = 1,
@@ -18,7 +21,7 @@ export default function GraphView({
   const container = useRef(null);
   const [error, setError] = useState('');
   const [empty, setEmpty] = useState(false);
-  const [summary, setSummary] = useState({nodes: 0, edges: 0, title: ''});
+  const [summary, setSummary] = useState({nodes: 0, edges: 0, title: '', hidden: 0});
   const handlers = useRef({
     onNode,
     onEdge
@@ -33,7 +36,7 @@ export default function GraphView({
     let alive = true,
       graph;
     setError('');
-    api(`/graph${center ? `?center=${center}&depth=${depth}` : ''}`).then(data => {
+    apiPage(`/graph${center ? `?center=${center}&depth=${depth}` : `?limit=${WHOLE_GRAPH_NODES}`}`).then(({ items: data, total }) => {
       if (!alive) return;
       let edges = data.edges.filter(edge => !relationType || edge.relation_type === relationType);
       const distances = new Map(center ? [[center, 0]] : []);
@@ -52,7 +55,7 @@ export default function GraphView({
       const pairs = JSON.parse(pathKey);
       const traversed = edge => pairs.some(([a, b]) => (edge.source_id === a && edge.target_id === b) || (edge.source_id === b && edge.target_id === a));
       const ids = new Set(nodes.map(n => n.id));
-      setSummary({nodes: nodes.length, edges: edges.filter(e => ids.has(e.source_id) && ids.has(e.target_id)).length, title: nodes.find(n => n.id === center)?.title || ''});
+      setSummary({nodes: nodes.length, edges: edges.filter(e => ids.has(e.source_id) && ids.has(e.target_id)).length, title: nodes.find(n => n.id === center)?.title || '', hidden: center ? 0 : Math.max(0, total - data.nodes.length)});
       setEmpty(!nodes.length);
       graph = cytoscape({
         container: container.current,
@@ -160,5 +163,5 @@ export default function GraphView({
       graph?.destroy();
     };
   }, [center, depth, filter, refresh, compact, relationType, direction, visitKey, pathKey]);
-  return <div className={`graph-wrap ${compact ? 'compact' : ''}`}><div className="graph-container" role="img" aria-label={`${center ? `局部图谱，当前节点：${summary.title}` : '知识图谱'}，${summary.nodes}个节点，${summary.edges}条关系`} data-center={center || ''} data-node-count={summary.nodes} data-edge-count={summary.edges} ref={container} />{empty && <div className="graph-overlay"><Empty title="先建立几个知识对象">添加关系后，知识网络会在这里展开。</Empty></div>}<div className="graph-error"><ErrorBox message={error} /></div><span className="graph-hint">滚轮缩放 · 拖动节点 · 点击查看</span></div>;
+  return <div className={`graph-wrap ${compact ? 'compact' : ''}`}><div className="graph-container" role="img" aria-label={`${center ? `局部图谱，当前节点：${summary.title}` : '知识图谱'}，${summary.nodes}个节点，${summary.edges}条关系`} data-center={center || ''} data-node-count={summary.nodes} data-edge-count={summary.edges} ref={container} />{summary.hidden > 0 && <div className="graph-note" role="status">仅显示关联最多的 {summary.nodes} 个节点，另有 {summary.hidden} 个未显示；用搜索或局部图查看其余内容。</div>}{empty && <div className="graph-overlay"><Empty title="先建立几个知识对象">添加关系后，知识网络会在这里展开。</Empty></div>}<div className="graph-error"><ErrorBox message={error} /></div><span className="graph-hint">滚轮缩放 · 拖动节点 · 点击查看</span></div>;
 }

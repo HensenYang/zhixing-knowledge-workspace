@@ -9,7 +9,8 @@ A relationship-driven knowledge workspace for scientific communication and educa
 - Markdown与公式笔记、来源和标签、版本冲突检查与浏览器草稿。
 - 带类型及证据的知识关系、全局图谱和可编辑画布。
 - 沿关系阅读：前置基座、方法应用、证据与横向比较；局部图跟随阅读位置并突出访问路径。
-- 学习日志、待运行及已运行实验、附件、回收站、ZIP备份恢复。
+- 学习日志、待运行及已运行实验、附件、回收站、ZIP备份恢复（大备份在后台恢复并显示进度）。
+- **证据健康检查**：找出没有证据的关系、失效链接、过期资料、依赖成环、被支持又被质疑的结论、尚未验证的实验声明和无法复现的运行记录，并给出证据覆盖率。
 
 ## 技术结构
 
@@ -66,13 +67,25 @@ powershell -ExecutionPolicy Bypass -File .\scripts\stop.ps1
 
 ## 开发与验证
 
+分页、连接池、后台任务和证据健康检查放在 `backend/` 下的独立模块里（`pool.py`、`paging.py`、`jobs.py`、`link_checker.py`、`evidence_health.py`），详见 [工程和规模化与证据健康检查](docs/engineering-and-evidence-health.md)。
+
+所有会写数据的测试都必须指向**隔离的测试数据库**，勿对个人正式数据库运行。先建一个空的测试库，然后：
+
 ```powershell
+$env:TEST_DATABASE_URL = "postgresql://用户:密码@127.0.0.1:5432/测试库"
+.\.venv\Scripts\python.exe -m pyflakes backend scripts
+.\.venv\Scripts\python.exe -m pytest backend/tests          # 每个用例使用独立的临时 schema
 Set-Location frontend_Web
 npm run build
-npx playwright test tests/reading-navigation.spec.js
+Set-Location ..
+.\.venv\Scripts\python.exe scripts/run_e2e.py                 # 浏览器测试：临时 schema + 临时服务，跑完即删
 ```
 
-阅读导航测试使用模拟接口。其他后端／浏览器验收可能写入测试数据，必须连接隔离测试数据库；参见测试代码中的 `TEST_DATABASE_URL` 配置，勿对个人正式数据库运行。
+没有设置 `TEST_DATABASE_URL` 时，需要数据库的测试会被跳过。`scripts/run_e2e.py` 可以带 Playwright 参数，例如只跑某个文件。GitHub 上的 CI 会自动执行同样的检查（`.github/workflows/ci.yml`）。
+
+**迁移**：在 `database/migrations/` 里新增 `V###__snake_name.sql`，并在文件里登记自己的版本；版本号不能与别人的重复（有测试检查）。
+
+规模测试：`scripts/seed_scale_data.py` 生成大量合成数据，`scripts/benchmark_api.py` 给接口计时。
 
 [框架设计](docs/phase-1-design.md) · [分享包说明](docs/share-guide.md)
 

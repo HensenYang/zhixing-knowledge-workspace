@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '20'
+  # An isolated database for tests. Tests create and drop their own schemas in it.
+  TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/zhixing_test
+
+jobs:
+  backend:
+    name: Backend (lint + tests)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: zhixing_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements-lock.txt
+      - run: pip install -r backend/requirements-lock.txt pyflakes
+      - name: Lint (syntax errors, unused or undefined names)
+        run: python -m pyflakes backend scripts
+      - name: Tests
+        run: python -m pytest backend/tests -v
+      - name: A fresh database migrates to the latest version
+        run: |
+          psql "$TEST_DATABASE_URL" -c 'CREATE DATABASE fresh_install'
+          python scripts/migrate.py
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fresh_install
+          WORKSPACE_ENV_FILE: /dev/null
+
+  frontend:
+    name: Front end (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend_Web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend_Web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  e2e:
+    name: End-to-end (browser)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: zhixing_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PLAYWRIGHT_CHANNEL: ''   # use the Chromium installed below instead of a system Chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements-lock.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend_Web/package-lock.json
+      - run: pip install -r backend/requirements-lock.txt
+      - run: npm ci
+        working-directory: frontend_Web
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend_Web
+      - name: Run the browser tests against a scratch schema
+        run: python scripts/run_e2e.py
+      - name: Keep screenshots of failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failures
+          path: storage/browser-results
+          if-no-files-found: ignore

@@ -1,5 +1,5 @@
 """Local personal knowledge workspace. PostgreSQL is the source of truth."""
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -8,7 +8,6 @@ import hashlib
 import io
 import json
 import os
-import shutil
 import zipfile
 
 from dotenv import load_dotenv
@@ -18,7 +17,9 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 import psycopg2
 from psycopg2 import sql
-from psycopg2.extras import Json, RealDictCursor
+from psycopg2.extras import Json
+from backend import pool as connection_pool
+from backend.paging import page, set_total
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(Path(os.environ.get('WORKSPACE_ENV_FILE', str(ROOT / '.env'))))
@@ -28,34 +29,45 @@ if not STORAGE.is_absolute():
 STORAGE.mkdir(parents=True, exist_ok=True)
 (STORAGE / 'attachments').mkdir(exist_ok=True)
 SCHEMA = os.environ.get('KNOWLEDGE_SCHEMA', 'knowledge')
-app = FastAPI(title='Embodied Knowledge Workspace', version='0.1.0')
+@asynccontextmanager
+async def lifespan(_app):
+    from backend import jobs
+    jobs.mark_interrupted()
+    yield
+    jobs.shutdown()
+    connection_pool.close_pools()
+
+app = FastAPI(title='Embodied Knowledge Workspace', version='0.1.0', lifespan=lifespan)
 
 Kind = Literal['concept','resource','repository','model','dataset','benchmark','experiment','question','task']
 RelationType = Literal['depends_on','implements','uses','evaluates','supports','questions','compares_with','related_to']
 TRASH_TABLES = {'object':'objects','relation':'relations','canvas':'canvases',
                 'session':'learning_sessions','run':'experiment_runs','attachment':'attachments'}
 
+def transaction_setup(isolation=None):
+    """What a transaction needs before its first statement. Everything is SET LOCAL, so nothing
+    leaks to the next request that reuses the pooled connection."""
+    def prepare(connection):
+        with connection.cursor() as cursor:
+            if isolation:
+                cursor.execute(sql.SQL('SET TRANSACTION ISOLATION LEVEL {}').format(sql.SQL(isolation)))
+            cursor.execute(sql.SQL('SET LOCAL search_path TO {}, public').format(sql.Identifier(SCHEMA)))
+    return prepare
+
 @contextmanager
-def db():
+def db(isolation=None):
     dsn = os.environ.get('DATABASE_URL')
     if not dsn:
         raise HTTPException(503, '数据库尚未配置，请在本机运行 scripts/setup_database.ps1。')
-    connection = None
     try:
-        connection = psycopg2.connect(dsn, connect_timeout=5)
-        with connection:
-            with connection.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute(sql.SQL('SET LOCAL search_path TO {}, public').format(sql.Identifier(SCHEMA)))
-                yield cursor
+        with connection_pool.transaction(dsn, transaction_setup(isolation)) as cursor:
+            yield cursor
     except psycopg2.IntegrityError:
         raise HTTPException(409, '存在重复记录或无效引用，修改未保存。')
-    except psycopg2.OperationalError:
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
         raise HTTPException(503, '无法连接 PostgreSQL，请检查本地服务与 .env 配置。')
     except psycopg2.ProgrammingError:
         raise HTTPException(503, '数据库结构未就绪，请运行 scripts/migrate.py。')
-    finally:
-        if connection is not None:
-            connection.close()
 
 def require(cursor, table, identifier):
     active = sql.SQL(' AND deleted_at IS NULL') if table in TRASH_TABLES.values() else sql.SQL('')
@@ -99,9 +111,18 @@ def set_tags(cursor, identifier, tags):
         tag_id = cursor.fetchone()['id']
         cursor.execute('INSERT INTO object_tags(object_id,tag_id) VALUES (%s,%s)', (str(identifier),tag_id))
 
+def objects_with_tags(cursor, rows):
+    """Attach tags to many objects with one query."""
+    names = {}
+    if rows:
+        cursor.execute('''SELECT ot.object_id::text AS object_id, t.name FROM object_tags ot JOIN tags t ON t.id=ot.tag_id
+            WHERE ot.object_id = ANY(%s::uuid[]) ORDER BY t.name''', ([str(row['id']) for row in rows],))
+        for item in cursor.fetchall():
+            names.setdefault(item['object_id'], []).append(item['name'])
+    return [{**row, 'tags': names.get(str(row['id']), [])} for row in rows]
+
 def object_with_tags(cursor, row):
-    cursor.execute('SELECT name FROM tags JOIN object_tags ON tags.id=tag_id WHERE object_id=%s ORDER BY name', (row['id'],))
-    return {**row, 'tags':[tag['name'] for tag in cursor.fetchall()]}
+    return objects_with_tags(cursor, [row])[0]
 
 @app.get('/api/health')
 def health():
@@ -113,16 +134,23 @@ def health():
     except HTTPException as error:
         return {'service':'ready','database':'unavailable','message':error.detail}
 
+def like_pattern(text):
+    """User text is matched literally: % and _ are not wildcards."""
+    return '%' + text.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+
 @app.get('/api/objects')
-def list_objects(q: str = '', kind: str = '', archived: bool = False, limit: int = 200, offset: int = 0):
-    limit = min(max(limit,1),1000)
+def list_objects(response: Response, q: str = '', kind: str = '', archived: bool = False, limit: int = 200, offset: int = 0):
+    limit, offset = page(limit, offset, 1000)
+    q, kind = q.replace('\x00', ''), kind.replace('\x00', '')   # PostgreSQL cannot compare against NUL characters
+    pattern = like_pattern(q)
+    where = '''deleted_at IS NULL AND (%s OR archived_at IS NULL) AND (%s='' OR kind=%s) AND (%s='' OR title ILIKE %s OR body_md ILIKE %s OR
+        EXISTS(SELECT 1 FROM object_tags ot JOIN tags t ON t.id=ot.tag_id WHERE ot.object_id=objects.id AND t.name ILIKE %s))'''
+    filters = (archived, kind, kind, q, pattern, pattern, pattern)
     with db() as cursor:
-        cursor.execute('''SELECT * FROM objects WHERE deleted_at IS NULL AND (%s OR archived_at IS NULL)
-            AND (%s='' OR kind=%s) AND (%s='' OR title ILIKE %s OR body_md ILIKE %s OR
-            EXISTS(SELECT 1 FROM object_tags ot JOIN tags t ON t.id=ot.tag_id WHERE ot.object_id=objects.id AND t.name ILIKE %s))
-            ORDER BY updated_at DESC LIMIT %s OFFSET %s''', (archived,kind,kind,q,f'%{q}%',f'%{q}%',f'%{q}%',limit,max(offset,0)))
-        rows = cursor.fetchall()
-        return [object_with_tags(cursor,row) for row in rows]
+        cursor.execute(f'SELECT count(*) AS total FROM objects WHERE {where}', filters)
+        set_total(response, cursor.fetchone()['total'])
+        cursor.execute(f'SELECT * FROM objects WHERE {where} ORDER BY updated_at DESC, id LIMIT %s OFFSET %s', (*filters, limit, offset))
+        return objects_with_tags(cursor, cursor.fetchall())
 
 @app.post('/api/objects', status_code=201)
 def create_object(data: ObjectInput):
@@ -196,15 +224,22 @@ def save_evidence(cursor, identifier, evidence):
         cursor.execute('INSERT INTO relation_evidence(relation_id,evidence_object_id,source_url,locator,explanation) VALUES (%s,%s,%s,%s,%s)', (str(identifier),str(item.evidence_object_id) if item.evidence_object_id else None,item.source_url,item.locator,item.explanation))
 
 @app.get('/api/relations')
-def list_relations():
+def list_relations(response: Response, limit: int = 5000, offset: int = 0):
+    limit, offset = page(limit, offset, 20000)
+    where = '''FROM relations r JOIN objects a ON a.id=r.source_id JOIN objects b ON b.id=r.target_id
+        WHERE r.deleted_at IS NULL AND a.deleted_at IS NULL AND b.deleted_at IS NULL'''
     with db() as cursor:
-        cursor.execute('''SELECT r.* FROM relations r JOIN objects a ON a.id=r.source_id
-            JOIN objects b ON b.id=r.target_id WHERE r.deleted_at IS NULL
-            AND a.deleted_at IS NULL AND b.deleted_at IS NULL ORDER BY r.created_at''')
+        cursor.execute(f'SELECT count(*) AS total {where}')
+        set_total(response, cursor.fetchone()['total'])
+        cursor.execute(f'SELECT r.* {where} ORDER BY r.created_at, r.id LIMIT %s OFFSET %s', (limit, offset))
         rows = cursor.fetchall()
+        evidence = {}
+        if rows:
+            cursor.execute('SELECT * FROM relation_evidence WHERE relation_id = ANY(%s::uuid[])', ([str(row['id']) for row in rows],))
+            for item in cursor.fetchall():
+                evidence.setdefault(str(item['relation_id']), []).append(item)
         for row in rows:
-            cursor.execute('SELECT * FROM relation_evidence WHERE relation_id=%s', (row['id'],))
-            row['evidence'] = cursor.fetchall()
+            row['evidence'] = evidence.get(str(row['id']), [])
         return rows
 
 @app.post('/api/relations', status_code=201)
@@ -241,26 +276,45 @@ def update_relation(identifier: UUID, data: RelationUpdate):
 def delete_relation(identifier: UUID):
     return move_to_trash('relation', identifier)
 
+ACTIVE_EDGES = '''FROM relations r JOIN objects a ON a.id=r.source_id JOIN objects b ON b.id=r.target_id
+    WHERE r.deleted_at IS NULL AND a.deleted_at IS NULL AND b.deleted_at IS NULL
+    AND a.archived_at IS NULL AND b.archived_at IS NULL'''
+
+def graph_neighbourhood(cursor, center, depth):
+    """Expand layer by layer inside the database, so only the neighbourhood is ever read."""
+    selected, frontier = {center}, {center}
+    for _ in range(min(max(depth, 1), 3)):
+        cursor.execute(f'SELECT r.source_id, r.target_id {ACTIVE_EDGES} AND (r.source_id = ANY(%s::uuid[]) OR r.target_id = ANY(%s::uuid[]))',
+                       (list(frontier), list(frontier)))
+        reached = {str(end) for row in cursor.fetchall() for end in (row['source_id'], row['target_id'])}
+        frontier = reached - selected
+        selected |= reached
+        if not frontier:
+            break
+    return selected
+
 @app.get('/api/graph')
-def graph(center: UUID | None = None, depth: int = 1):
+def graph(response: Response, center: UUID | None = None, depth: int = 1, limit: int = 1000):
+    """Neighbourhood of `center`, or the whole graph. A whole graph above `limit` nodes keeps the
+    best-connected nodes; X-Total-Count then tells the client how many exist."""
+    limit, _ = page(limit, 0, 5000)
     with db() as cursor:
-        cursor.execute('SELECT id,title,kind,mastery_status FROM objects WHERE archived_at IS NULL AND deleted_at IS NULL')
-        nodes = cursor.fetchall()
-        cursor.execute('''SELECT r.* FROM relations r JOIN objects a ON a.id=r.source_id JOIN objects b ON b.id=r.target_id
-            WHERE a.archived_at IS NULL AND b.archived_at IS NULL
-            AND a.deleted_at IS NULL AND b.deleted_at IS NULL AND r.deleted_at IS NULL''')
-        edges = cursor.fetchall()
-    if center:
-        selected = {str(center)}
-        for _ in range(min(max(depth,1),3)):
-            neighbours = set(selected)
-            for edge in edges:
-                if str(edge['source_id']) in selected or str(edge['target_id']) in selected:
-                    neighbours.update([str(edge['source_id']),str(edge['target_id'])])
-            selected = neighbours
-        nodes = [node for node in nodes if str(node['id']) in selected]
-        edges = [edge for edge in edges if str(edge['source_id']) in selected and str(edge['target_id']) in selected]
-    return {'nodes':nodes,'edges':edges}
+        if center:
+            keep = list(graph_neighbourhood(cursor, str(center), depth))
+            cursor.execute('SELECT id,title,kind,mastery_status FROM objects WHERE archived_at IS NULL AND deleted_at IS NULL AND id = ANY(%s::uuid[])', (keep,))
+            nodes = cursor.fetchall()
+            set_total(response, len(nodes))
+        else:
+            cursor.execute('SELECT count(*) AS total FROM objects WHERE archived_at IS NULL AND deleted_at IS NULL')
+            set_total(response, cursor.fetchone()['total'])
+            cursor.execute('''SELECT o.id,o.title,o.kind,o.mastery_status FROM objects o
+                LEFT JOIN (SELECT node, count(*) AS degree FROM (SELECT source_id AS node FROM relations WHERE deleted_at IS NULL
+                           UNION ALL SELECT target_id FROM relations WHERE deleted_at IS NULL) ends GROUP BY node) d ON d.node=o.id
+                WHERE o.archived_at IS NULL AND o.deleted_at IS NULL ORDER BY COALESCE(d.degree,0) DESC, o.updated_at DESC, o.id LIMIT %s''', (limit,))
+            nodes = cursor.fetchall()
+        keep = [str(node['id']) for node in nodes]
+        cursor.execute(f'SELECT r.* {ACTIVE_EDGES} AND r.source_id = ANY(%s::uuid[]) AND r.target_id = ANY(%s::uuid[])', (keep, keep))
+        return {'nodes': nodes, 'edges': cursor.fetchall()}
 
 class CanvasInput(BaseModel):
     title: str = Field(min_length=1)
@@ -300,11 +354,14 @@ def canvas_document(cursor, identifier):
     row['items'] = cursor.fetchall()
     cursor.execute('SELECT * FROM canvas_edges WHERE canvas_id=%s', (str(identifier),))
     row['edges'] = cursor.fetchall()
+    linked = [str(edge['relation_id']) for edge in row['edges'] if edge['relation_id']]
+    removed = {}
+    if linked:
+        cursor.execute('SELECT id::text AS id, deleted_at FROM relations WHERE id = ANY(%s::uuid[])', (linked,))
+        removed = {item['id']: item['deleted_at'] is not None for item in cursor.fetchall()}
     for edge in row['edges']:
         if edge['relation_id']:
-            cursor.execute('SELECT deleted_at FROM relations WHERE id=%s',(edge['relation_id'],))
-            linked = cursor.fetchone()
-            edge['relation_deleted'] = linked is None or linked['deleted_at'] is not None
+            edge['relation_deleted'] = removed.get(str(edge['relation_id']), True)
     return row
 
 def validate_canvas(cursor, data):
@@ -349,9 +406,12 @@ def validate_canvas(cursor, data):
                 raise HTTPException(422,'知识关系与画布对象端点不一致。')
 
 @app.get('/api/canvases')
-def list_canvases():
+def list_canvases(response: Response, limit: int = 200, offset: int = 0):
+    limit, offset = page(limit, offset, 1000)
     with db() as cursor:
-        cursor.execute('SELECT * FROM canvases WHERE deleted_at IS NULL ORDER BY updated_at DESC')
+        cursor.execute('SELECT count(*) AS total FROM canvases WHERE deleted_at IS NULL')
+        set_total(response, cursor.fetchone()['total'])
+        cursor.execute('SELECT * FROM canvases WHERE deleted_at IS NULL ORDER BY updated_at DESC, id LIMIT %s OFFSET %s', (limit, offset))
         return cursor.fetchall()
 
 @app.post('/api/canvases', status_code=201)
@@ -421,13 +481,20 @@ class SessionInput(BaseModel):
     version: int | None = Field(default=None,ge=1)
 
 @app.get('/api/sessions')
-def sessions():
+def sessions(response: Response, limit: int = 200, offset: int = 0):
+    limit, offset = page(limit, offset, 1000)
     with db() as cursor:
-        cursor.execute('SELECT * FROM learning_sessions WHERE deleted_at IS NULL ORDER BY occurred_at DESC')
+        cursor.execute('SELECT count(*) AS total FROM learning_sessions WHERE deleted_at IS NULL')
+        set_total(response, cursor.fetchone()['total'])
+        cursor.execute('SELECT * FROM learning_sessions WHERE deleted_at IS NULL ORDER BY occurred_at DESC, id LIMIT %s OFFSET %s', (limit, offset))
         rows = cursor.fetchall()
+        linked = {}
+        if rows:
+            cursor.execute('SELECT session_id, object_id FROM session_objects WHERE session_id = ANY(%s::uuid[])', ([str(row['id']) for row in rows],))
+            for item in cursor.fetchall():
+                linked.setdefault(str(item['session_id']), []).append(item['object_id'])
         for row in rows:
-            cursor.execute('SELECT object_id FROM session_objects WHERE session_id=%s', (row['id'],))
-            row['object_ids'] = [item['object_id'] for item in cursor.fetchall()]
+            row['object_ids'] = linked.get(str(row['id']), [])
         return rows
 
 @app.post('/api/sessions', status_code=201)
@@ -487,14 +554,21 @@ class RunInput(BaseModel):
     version: int | None = Field(default=None,ge=1)
 
 @app.get('/api/runs')
-def list_runs():
+def list_runs(response: Response, limit: int = 200, offset: int = 0):
+    limit, offset = page(limit, offset, 1000)
+    where = 'FROM experiment_runs r JOIN objects o ON o.id=r.experiment_id WHERE r.deleted_at IS NULL AND o.deleted_at IS NULL'
     with db() as cursor:
-        cursor.execute('''SELECT r.* FROM experiment_runs r JOIN objects o ON o.id=r.experiment_id
-            WHERE r.deleted_at IS NULL AND o.deleted_at IS NULL ORDER BY r.created_at DESC''')
+        cursor.execute(f'SELECT count(*) AS total {where}')
+        set_total(response, cursor.fetchone()['total'])
+        cursor.execute(f'SELECT r.* {where} ORDER BY r.created_at DESC, r.id LIMIT %s OFFSET %s', (limit, offset))
         rows = cursor.fetchall()
+        artifacts = {}
+        if rows:
+            cursor.execute('SELECT * FROM run_artifacts WHERE run_id = ANY(%s::uuid[])', ([str(row['id']) for row in rows],))
+            for item in cursor.fetchall():
+                artifacts.setdefault(str(item['run_id']), []).append(item)
         for row in rows:
-            cursor.execute('SELECT * FROM run_artifacts WHERE run_id=%s', (row['id'],))
-            row['artifacts'] = cursor.fetchall()
+            row['artifacts'] = artifacts.get(str(row['id']), [])
         return rows
 
 def write_run(cursor,data,identifier=None):
@@ -574,16 +648,24 @@ def rename_attachment(identifier: UUID,data: AttachmentRename):
         cursor.execute('UPDATE attachments SET original_name=%s WHERE id=%s RETURNING *',(name,str(identifier)))
         return cursor.fetchone()
 
+TRASH_LABELS = {'object':'title','relation':"'知识关系'",'canvas':'title','session':'objective',
+                'run':"COALESCE(NULLIF(hypothesis_md,''),'实验运行')",'attachment':'original_name'}
+
+def trash_union():
+    """One query over every kind of deleted record."""
+    return ' UNION ALL '.join(
+        f"SELECT '{kind}' AS kind, id::text AS id, {TRASH_LABELS[kind]} AS title, deleted_at FROM {table} WHERE deleted_at IS NOT NULL"
+        for kind, table in TRASH_TABLES.items())
+
 @app.get('/api/trash')
-def list_trash():
-    rows=[]
+def list_trash(response: Response, limit: int = 200, offset: int = 0):
+    limit, offset = page(limit, offset, 1000)
+    union = trash_union()
     with db() as cursor:
-        for kind,table in TRASH_TABLES.items():
-            cursor.execute(sql.SQL('SELECT * FROM {} WHERE deleted_at IS NOT NULL').format(sql.Identifier(table)))
-            for row in cursor.fetchall():
-                title=row.get('title') or row.get('objective') or row.get('original_name') or row.get('hypothesis_md') or ('知识关系' if kind=='relation' else '实验运行')
-                rows.append({'kind':kind,'id':row['id'],'title':title,'deleted_at':row['deleted_at']})
-    return sorted(rows,key=lambda row:row['deleted_at'],reverse=True)
+        cursor.execute(f'SELECT count(*) AS total FROM ({union}) trash')
+        set_total(response, cursor.fetchone()['total'])
+        cursor.execute(f'SELECT * FROM ({union}) trash ORDER BY deleted_at DESC, id LIMIT %s OFFSET %s', (limit, offset))
+        return cursor.fetchall()
 
 @app.post('/api/trash/{kind}/{identifier}/restore')
 def restore_record(kind: str,identifier: UUID):
@@ -746,28 +828,25 @@ def inspect_backup(content):
     except (ValueError,KeyError,TypeError,zipfile.BadZipFile):
         raise HTTPException(422,'备份损坏或缺少必要内容。')
 
-@app.post('/api/import')
-async def import_backup(file: UploadFile = File(...),dry_run: bool = True):
-    content = await file.read(128 * 1024 * 1024 + 1)
-    if len(content) > 128 * 1024 * 1024:
-        raise HTTPException(413,'备份文件超过 128 MB。')
-    archive,tables = inspect_backup(content)
+def import_conflicts(cursor, tables):
+    conflicts = {}
+    for table in TABLES:
+        ids = [row['id'] for row in tables[table] if 'id' in row]
+        if ids:
+            cursor.execute(sql.SQL('SELECT id FROM {} WHERE id = ANY(%s::uuid[])').format(sql.Identifier(table)),(ids,))
+            rows = cursor.fetchall()
+            if rows:
+                conflicts[table] = len(rows)
+    return conflicts
+
+def restore_backup(archive, tables, report=lambda progress, message='': None):
+    """Write a checked backup in one transaction; attachment files are removed again if it fails."""
     created_files = []
     try:
+        total = sum(len(rows) for rows in tables.values()) or 1
+        written = 0
+        report(5, 'checked')
         with db() as cursor:
-            conflicts = {}
-            for table in TABLES:
-                ids = [row['id'] for row in tables[table] if 'id' in row]
-                if ids:
-                    cursor.execute(sql.SQL('SELECT id FROM {} WHERE id = ANY(%s::uuid[])').format(sql.Identifier(table)),(ids,))
-                    rows = cursor.fetchall()
-                    if rows:
-                        conflicts[table] = len(rows)
-            summary = {'counts':{table:len(rows) for table,rows in tables.items()},'conflicts':conflicts,'external_artifacts_included':False}
-            if dry_run:
-                return summary
-            if conflicts:
-                raise HTTPException(409,'记录 ID 冲突；请恢复到空数据库，或使用不冲突的备份。现有数据未覆盖。')
             cursor.execute('SET CONSTRAINTS ALL DEFERRED')
             for table in TABLES:
                 cursor.execute('SELECT column_name FROM information_schema.columns WHERE table_schema=%s AND table_name=%s',(SCHEMA,table))
@@ -779,6 +858,9 @@ async def import_backup(file: UploadFile = File(...),dry_run: bool = True):
                     values = [json_value(row[key]) if key in JSON_FIELDS else row[key] for key in columns]
                     statement = sql.SQL('INSERT INTO {} ({}) VALUES ({})').format(sql.Identifier(table),sql.SQL(',').join(map(sql.Identifier,columns)),sql.SQL(',').join(sql.Placeholder() for _ in columns))
                     cursor.execute(statement,values)
+                written += len(tables[table])
+                report(5 + 85 * written / total, table)
+            report(92, 'attachments')
             for item in tables['attachments']:
                 path = attachment_path(item['relative_path'])
                 if path.exists():
@@ -786,10 +868,40 @@ async def import_backup(file: UploadFile = File(...),dry_run: bool = True):
                 path.parent.mkdir(parents=True,exist_ok=True)
                 created_files.append(path)
                 path.write_bytes(archive.read(item['relative_path']))
-        return {**summary,'restored':True}
+        return {'counts':{table:len(rows) for table,rows in tables.items()},'restored':True}
     except Exception:
         for path in created_files:
             path.unlink(missing_ok=True)
         raise
     finally:
         archive.close()
+
+@app.post('/api/import')
+async def import_backup(response: Response, file: UploadFile = File(...),dry_run: bool = True):
+    """dry_run=true: validate and report conflicts (synchronous).
+    dry_run=false: validate, refuse on conflicts, then restore in the background (202 + job id)."""
+    content = await file.read(128 * 1024 * 1024 + 1)
+    if len(content) > 128 * 1024 * 1024:
+        raise HTTPException(413,'备份文件超过 128 MB。')
+    archive,tables = inspect_backup(content)
+    try:
+        with db() as cursor:
+            conflicts = import_conflicts(cursor, tables)
+        summary = {'counts':{table:len(rows) for table,rows in tables.items()},'conflicts':conflicts,'external_artifacts_included':False}
+        if dry_run:
+            archive.close()
+            return summary
+        if conflicts:
+            raise HTTPException(409,'记录 ID 冲突；请恢复到空数据库，或使用不冲突的备份。现有数据未覆盖。')
+        from backend import jobs
+        job_id = jobs.submit('import', lambda report: restore_backup(archive, tables, report))
+    except BaseException:
+        archive.close()
+        raise
+    response.status_code = 202
+    return {**summary,'job_id':job_id,'status':'queued'}
+
+# Feature modules that use the helpers above are attached last.
+from backend import evidence_health, jobs as job_runner  # noqa: E402
+app.include_router(job_runner.router)
+app.include_router(evidence_health.router)
