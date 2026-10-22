@@ -29,6 +29,10 @@ def client(monkeypatch,tmp_path):
     monkeypatch.setattr(workspace,'STORAGE',tmp_path)
     (tmp_path/'attachments').mkdir()
     with TestClient(workspace.app) as test_client:
+        response=test_client.post('/api/auth/register',json={
+            'email':'owner@example.test','display_name':'测试用户','password':'test-password-123'
+        })
+        assert response.status_code==201,response.text
         yield test_client
     with psycopg2.connect(DSN) as connection:
         with connection.cursor() as cursor:
@@ -41,6 +45,27 @@ def create(client,title='机器人动作',kind='concept'):
 
 def canvas_item(object_id,x=0,parent_id=None):
     return {'id':str(uuid4()),'item_type':'object','object_id':object_id,'parent_id':parent_id,'x':x,'y':0,'width':260,'height':160,'properties':{}}
+
+def test_collaboration_auth_members_comments_reviews_and_isolation(client):
+    me=client.get('/api/auth/me')
+    assert me.status_code==200 and me.json()['email']=='owner@example.test'
+    workspace_id=me.json()['workspaces'][0]['id']
+    item=create(client,'需要协作审核')
+    comment=client.post('/api/comments',json={'target_type':'object','target_id':item['id'],'body':'请补充证据。'})
+    assert comment.status_code==201,comment.text
+    assert client.get(f"/api/comments?target_type=object&target_id={item['id']}").json()[0]['display_name']=='测试用户'
+    review=client.post('/api/reviews',json={'target_type':'object','target_id':item['id'],'target_version':1,'note':'请审核'})
+    assert review.status_code==201,review.text
+    decided=client.patch(f"/api/reviews/{review.json()['id']}",json={'status':'approved','note':'通过'})
+    assert decided.status_code==200 and decided.json()['status']=='approved'
+    second=client.post('/api/auth/register',json={'email':'viewer@example.test','display_name':'查看者','password':'test-password-456'})
+    assert second.status_code==201,second.text
+    client.post('/api/auth/login',json={'email':'owner@example.test','password':'test-password-123'})
+    added=client.post(f'/api/workspaces/{workspace_id}/members',json={'email':'viewer@example.test','role':'viewer'})
+    assert added.status_code==201,added.text
+    client.post('/api/auth/login',json={'email':'viewer@example.test','password':'test-password-456'})
+    assert client.get('/api/objects',headers={'X-Workspace-ID':workspace_id}).status_code==200
+    assert client.post('/api/objects',headers={'X-Workspace-ID':workspace_id},json={'title':'禁止写入'}).status_code==403
 
 def test_unicode_search_revision_conflict_archive(client):
     item=create(client)
@@ -60,6 +85,35 @@ def test_unicode_search_revision_conflict_archive(client):
     restored={**client.get(f"/api/objects/{item['id']}").json(),'archived_at':None}
     assert client.patch(f"/api/objects/{item['id']}",json=restored).status_code==200
     assert len(client.get('/api/objects').json())==1
+
+
+def test_source_import_uniqueness_is_scoped_to_each_workspace(client):
+    payload={'source_type':'mcp','source_key':'zotero:local:0:SAME1234',
+             'object':{'kind':'resource','title':'Owner material','body_md':'Owner original body'}}
+    first=client.post('/api/source-imports/commit',json=payload)
+    assert first.status_code==201,first.text
+    original=first.json()
+    assert client.post('/api/source-imports/commit',json=payload).status_code==409
+    registered=client.post('/api/auth/register',json={
+        'email':'separate-workspace@example.test','display_name':'Independent workspace','password':'test-password-789'})
+    assert registered.status_code==201,registered.text
+    assert client.get('/api/objects').json()==[]
+    second=client.post('/api/source-imports/commit',json={**payload,'object':{**payload['object'],'title':'Second workspace material'}})
+    assert second.status_code==201,second.text
+    assert second.json()['id']!=original['id']
+    assert client.get(f"/api/objects/{original['id']}").status_code==404
+    assert client.post('/api/auth/login',json={'email':'owner@example.test','password':'test-password-123'}).status_code==200
+    stored=client.get(f"/api/objects/{original['id']}").json()
+    assert stored['title']=='Owner material' and stored['body_md']=='Owner original body'
+    assert client.get(f"/api/objects/{second.json()['id']}").status_code==404
+
+
+def test_private_import_and_model_handlers_require_authentication(client):
+    client.cookies.clear()
+    assert client.get('/api/source-imports/providers').status_code==401
+    assert client.post('/api/source-imports/analyze',json={'title':'Test','body_md':'Original text'}).status_code==401
+    assert client.get('/api/llm/status').status_code==401
+    assert client.post('/api/llm/test').status_code==401
 
 def test_relation_evidence_undirected_uniqueness_graph(client):
     a,b=create(client,'VLA'),create(client,'动作表示')
@@ -123,6 +177,67 @@ def test_sessions_and_run_validation(client):
     assert client.get('/api/runs').json()[0]['artifacts'][0]['location']=='experiments/result.log'
     assert client.patch(f"/api/runs/{run.json()['id']}",json={**run.json(),'status':'succeeded','result_md':'运行完成'}).status_code==200
 
+def test_learning_path_publish_share_and_revoke(client):
+    concept=create(client,'VLA 基础')
+    created=client.post('/api/learning-paths',json={
+        'title':'VLA 入门路径',
+        'steps':[{'object_id':concept['id'],'title':'理解 VLA 基础'}],
+    })
+    assert created.status_code==201,created.text
+    path=created.json()
+    assert client.post(f"/api/learning-paths/{path['id']}/publish").status_code==422
+    saved=client.put(f"/api/learning-paths/{path['id']}",json={
+        **path,
+        'objective_md':'能够解释视觉、语言与动作之间的关系。',
+        'completion_criteria_md':'能够独立画出端到端数据流。',
+        'steps':[{**path['steps'][0],'completion_criteria_md':'不看笔记解释输入和输出。'}],
+    })
+    assert saved.status_code==200,saved.text
+    published=client.post(f"/api/learning-paths/{path['id']}/publish")
+    assert published.status_code==200,published.text
+    token=published.json()['share_token']
+    shared=client.get(f'/api/shared/learning-paths/{token}')
+    assert shared.status_code==200 and shared.json()['steps'][0]['object_available'] is True
+    assert client.post(f"/api/learning-paths/{path['id']}/unpublish").status_code==200
+    assert client.get(f'/api/shared/learning-paths/{token}').status_code==404
+    assert client.delete(f"/api/learning-paths/{path['id']}").status_code==200
+    assert any(row['kind']=='path' for row in client.get('/api/trash').json())
+    assert client.post(f"/api/trash/path/{path['id']}/restore").status_code==200
+
+
+def test_learning_path_artifact_copy_roundtrip_privacy_and_workspace_isolation(client):
+    a, b = create(client, 'Artifact concept'), create(client, 'Artifact paper', 'resource')
+    relation = client.post('/api/relations', json={'source_id': a['id'], 'target_id': b['id'],
+        'relation_type': 'uses', 'evidence': [{'evidence_object_id': b['id'], 'source_url': 'https://example.org', 'locator': 'p. 3'}]})
+    assert relation.status_code == 201, relation.text
+    original = client.post('/api/learning-paths', json={'title': 'Portable path', 'objective_md': 'Explain',
+        'completion_criteria_md': 'Demonstrate', 'steps': [{'title': obj['title'], 'object_id': obj['id'],
+            'completion_criteria_md': 'Explain independently'} for obj in (a, b)]}).json()
+    summary = client.get(f"/api/learning-paths/{original['id']}/artifact").json()
+    assert all(obj['body_md'] == '' for obj in summary['objects'])
+    full = client.get(f"/api/learning-paths/{original['id']}/artifact?include_body=true")
+    assert full.status_code == 200, full.text
+    artifact = full.json()
+    assert artifact['objects'][0]['body_md'] == a['body_md']
+    imported = client.post('/api/learning-paths/import', files={'file': ('path.json', json.dumps(artifact).encode(), 'application/json')})
+    assert imported.status_code == 201, imported.text
+    copied = imported.json()
+    assert copied['id'] != original['id'] and copied['status'] == 'draft' and copied['share_token'] is None
+    assert {step['object_id'] for step in copied['steps']}.isdisjoint({a['id'], b['id']})
+    assert len(client.get('/api/relations').json()) == 2
+    assert client.get(f"/api/objects/{a['id']}").json()['body_md'] == a['body_md']
+    published = client.post(f"/api/learning-paths/{original['id']}/publish").json()
+    shared = client.get(f"/api/shared/learning-paths/{published['share_token']}").json()
+    assert 'workspace_id' not in shared and 'created_by' not in shared and 'share_token' not in shared
+    assert len(shared['artifact']['relations']) == 1
+    assert shared['artifact']['relations'][0]['evidence'][0]['locator'] == 'p. 3'
+    invalid = {**artifact, 'relations': [{**artifact['relations'][0], 'target_id': str(uuid4())}]}
+    before = len(client.get('/api/objects').json())
+    assert client.post('/api/learning-paths/import', files={'file': ('bad.json', json.dumps(invalid).encode())}).status_code == 422
+    assert len(client.get('/api/objects').json()) == before
+    denied = client.get(f"/api/learning-paths/{original['id']}/artifact", headers={'X-Workspace-ID': str(uuid4())})
+    assert denied.status_code == 403
+
 def test_backup_complete_roundtrip_and_conflict(client,monkeypatch,tmp_path):
     a,b=create(client,'模型'),create(client,'论文','resource')
     client.patch(f"/api/objects/{a['id']}",json={**a,'title':'模型修订'})
@@ -154,6 +269,8 @@ def test_backup_complete_roundtrip_and_conflict(client,monkeypatch,tmp_path):
     (destination/'attachments').mkdir(parents=True)
     monkeypatch.setattr(workspace,'STORAGE',destination)
     try:
+        registered=client.post('/api/auth/register',json={'email':'restore@example.test','display_name':'恢复用户','password':'restore-password-123'})
+        assert registered.status_code==201,registered.text
         preview=client.post('/api/import?dry_run=true',files=files)
         assert preview.status_code==200 and preview.json()['conflicts']=={}
         restored=client.post('/api/import?dry_run=false',files=files)
@@ -254,7 +371,8 @@ def test_permanent_object_delete_cleans_references_and_files(client):
     assert not file_path.exists()
     assert client.post(f"/api/trash/object/{a['id']}/restore").status_code==404
     stored=client.get(f"/api/canvases/{canvas['id']}").json()
-    assert stored['items'][0]['item_type']=='text' and stored['items'][0]['object_id'] is None
+    placeholder=next(item for item in stored['items'] if item['item_type']=='text')
+    assert placeholder['object_id'] is None
     assert stored['edges'][0]['relation_id'] is None
     assert stored['version']==3
     assert client.get('/api/sessions').json()[0]['object_ids']==[b['id']]
@@ -292,3 +410,56 @@ def test_invalid_reference_rolls_back_complete_import(client):
     response=client.post('/api/import?dry_run=false',files={'file':('invalid.zip',output.getvalue())})
     assert response.status_code==409,response.text
     assert len(client.get('/api/objects').json())==1
+
+
+def test_pdf_import_commits_images_original_and_body_references_with_backup(client):
+    from backend.tests.test_import_assets import pdf_bytes
+    preview=client.post('/api/source-imports/preview-file',files={'file':('figures.pdf',pdf_bytes(),'application/pdf')})
+    assert preview.status_code==200,preview.text
+    data=preview.json()
+    assert {asset['kind'] for asset in data['assets']}=={'source','image','page'}
+    assert client.get('/api/objects').json()==[]
+    payload={'source_type':'pdf','source_key':data['source_key'],'preview_token':data['preview_token'],
+             'object':{'kind':'resource','title':'PDF image import','body_md':data['body_md'],'metadata':data['metadata']}}
+    saved=client.post('/api/source-imports/commit',json=payload)
+    assert saved.status_code==201,saved.text
+    item=saved.json()
+    assert 'import-asset://' not in item['body_md']
+    attachments=client.get(f"/api/objects/{item['id']}/attachments").json()
+    assert len(attachments)==3
+    for asset in attachments:
+        image=client.get(f"/api/attachments/{asset['id']}/content")
+        assert image.status_code==200
+        assert image.headers['content-disposition'].startswith('inline')
+        if asset['mime_type']=='image/png':
+            assert image.content.startswith(b'\x89PNG')
+            assert f"/api/attachments/{asset['id']}/content" in item['body_md']
+    assert client.get(data['assets'][0]['preview_url']).status_code==404
+    assert client.post('/api/source-imports/commit',json={**payload,'preview_token':None}).status_code==409
+    archive=zipfile.ZipFile(io.BytesIO(client.get('/api/export').content))
+    manifest=json.loads(archive.read('manifest.json'))
+    assert len(manifest['tables']['attachments'])==3
+    for attachment in attachments:
+        assert archive.read(attachment['relative_path'])
+    assert manifest['tables']['objects'][0]['body_md']==item['body_md']
+
+
+def test_trashed_zotero_source_can_be_reimported_without_overwriting_old_material(client):
+    payload={'source_type':'mcp','source_key':'zotero:local:0:ABCD1234',
+        'object':{'kind':'resource','title':'Original paper','body_md':'Original preserved text'}}
+    first=client.post('/api/source-imports/commit',json=payload).json()
+    conflict=client.post('/api/source-imports/commit',json=payload)
+    assert conflict.status_code==409
+    assert conflict.json()['detail']['existing_import']['id']==first['id']
+    note=client.post('/api/source-imports/commit',json={**payload,'save_as_note':True,
+        'object':{**payload['object'],'body_md':'LLM findings\n\nOriginal preserved text'}})
+    assert note.status_code==201,note.text
+    assert note.json()['metadata']['derived_source']['object_id']==first['id']
+    assert client.get(f"/api/objects/{first['id']}").json()['body_md']=='Original preserved text'
+    assert client.delete(f"/api/objects/{first['id']}").status_code==200
+    assert client.get('/api/trash').json()
+    reimport=client.post('/api/source-imports/commit',json=payload)
+    assert reimport.status_code==201,reimport.text
+    assert reimport.json()['id']!=first['id']
+    assert any(x['id']==first['id'] for x in client.get('/api/trash').json())
+    assert client.post('/api/source-imports/commit',json=payload).status_code==409

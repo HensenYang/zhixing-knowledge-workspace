@@ -1,23 +1,25 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowUpRight, Plus, Network, BookOpen, FlaskConical, Route } from 'lucide-react';
-import { api, write } from '../services/api';
-import { PageTitle, Badge, ErrorBox, DateText, Empty } from '../components/shared';
-import { useWorkspaceChanges } from '../components/RecordActions';
-import GraphView from '../components/GraphView';
+import { t, useLanguage } from "../i18n";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { ArrowUpRight, Plus, Network, BookOpen, FlaskConical, Route } from "lucide-react";
+import { api, write } from "../services/api";
+import { PageTitle, Badge, ErrorBox, DateText, Empty } from "../components/shared";
+import { useWorkspaceChanges } from "../components/RecordActions";
+import GraphView from "../components/GraphView";
 export default function Home() {
+  useLanguage();
   const [objects, setObjects] = useState([]),
     [sessions, setSessions] = useState([]),
     [runs, setRuns] = useState([]),
     [relations, setRelations] = useState([]),
-    [error, setError] = useState(''),
+    [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
-  const load = () => Promise.all([api('/objects?limit=1000'), api('/sessions'), api('/runs'), api('/relations')]).then(([o, s, r, e]) => {
+  const load = () => Promise.all([api("/objects?limit=1000"), api("/sessions"), api("/runs"), api("/relations")]).then(([o, s, r, e]) => {
     setObjects(o);
     setSessions(s);
     setRuns(r);
     setRelations(e);
-    setError('');
+    setError("");
   }).catch(e => setError(e.message));
   useEffect(() => {
     load();
@@ -27,59 +29,59 @@ export default function Home() {
     setBusy(true);
     try {
       const definitions = [{
-        kind: 'concept',
-        title: '世界模型',
-        summary: '学习环境如何随动作演化，以及预测如何服务于决策。',
-        body_md: '# 当前理解\n\n区分状态预测、视频预测与模型辅助决策。\n\n## 待验证\n\n预测质量如何与任务成功率联系？',
-        tags: ['世界模型']
+        kind: "concept",
+        title: t("世界模型"),
+        summary: t("学习环境如何随动作演化，以及预测如何服务于决策。"),
+        body_md: t("# 当前理解\n\n区分状态预测、视频预测与模型辅助决策。\n\n## 待验证\n\n预测质量如何与任务成功率联系？"),
+        tags: [t("世界模型")]
       }, {
-        kind: 'model',
-        title: 'UnifoLM-WMA-0',
-        summary: '后续复现目标：先运行官方交互式世界模型样例。',
-        source_url: 'https://github.com/unitreerobotics/unifolm-world-model-action',
-        tags: ['世界模型', '待复现']
+        kind: "model",
+        title: "UnifoLM-WMA-0",
+        summary: t("后续复现目标：先运行官方交互式世界模型样例。"),
+        source_url: "https://github.com/unitreerobotics/unifolm-world-model-action",
+        tags: [t("世界模型"), t("待复现")]
       }, {
-        kind: 'repository',
-        title: 'UnifoLM 官方代码仓库',
-        source_url: 'https://github.com/unitreerobotics/unifolm-world-model-action',
-        summary: '记录 commit、入口脚本、依赖与运行笔记。',
-        tags: ['代码']
+        kind: "repository",
+        title: t("UnifoLM 官方代码仓库"),
+        source_url: "https://github.com/unitreerobotics/unifolm-world-model-action",
+        summary: t("记录 commit、入口脚本、依赖与运行笔记。"),
+        tags: [t("代码")]
       }, {
-        kind: 'question',
-        title: '4090 可运行哪种 UnifoLM 配置？',
-        summary: '通过实测记录峰值显存、耗时与输出。',
-        tags: ['部署']
+        kind: "question",
+        title: t("4090 可运行哪种 UnifoLM 配置？"),
+        summary: t("通过实测记录峰值显存、耗时与输出。"),
+        tags: [t("部署")]
       }, {
-        kind: 'task',
-        title: '第一步：读懂一条机器人轨迹',
-        summary: '解释观测字段、动作单位、控制频率与坐标系。',
+        kind: "task",
+        title: t("第一步：读懂一条机器人轨迹"),
+        summary: t("解释观测字段、动作单位、控制频率与坐标系。"),
         metadata: {
-          acceptance: '能用自己的话解释样本的输入、输出与单位。'
+          acceptance: t("能用自己的话解释样本的输入、输出与单位。")
         },
-        tags: ['入门']
+        tags: [t("入门")]
       }, {
-        kind: 'concept',
-        title: 'VLA 与动作表示',
-        summary: '视觉和语言如何转换为机器人可执行的动作。',
-        tags: ['VLA']
+        kind: "concept",
+        title: t("VLA 与动作表示"),
+        summary: t("视觉和语言如何转换为机器人可执行的动作。"),
+        tags: ["VLA"]
       }, {
-        kind: 'experiment',
-        title: '部署可行性调查',
-        summary: '这是待开展的实验，没有实际模型运行结果。',
-        tags: ['部署']
+        kind: "experiment",
+        title: t("部署可行性调查"),
+        summary: t("这是待开展的实验，没有实际模型运行结果。"),
+        tags: [t("部署")]
       }];
       const created = [];
-      for (const d of definitions) created.push(await write('/objects', d));
-      for (const [a, b, type] of [[1, 0, 'depends_on'], [2, 1, 'implements'], [3, 1, 'related_to'], [5, 0, 'compares_with'], [6, 1, 'evaluates']]) await write('/relations', {
+      for (const d of definitions) created.push(await write("/objects", d));
+      for (const [a, b, type] of [[1, 0, "depends_on"], [2, 1, "implements"], [3, 1, "related_to"], [5, 0, "compares_with"], [6, 1, "evaluates"]]) await write("/relations", {
         source_id: created[a].id,
         target_id: created[b].id,
         relation_type: type,
-        description: '启动示例关系，可按自己的理解修改。'
+        description: t("启动示例关系，可按自己的理解修改。")
       });
-      await write('/sessions', {
-        objective: '建立学习工作台',
-        activity_md: '录入首批待学习对象与问题。',
-        next_step_md: '先验收知识库，再开始机器人轨迹与模仿学习实验。',
+      await write("/sessions", {
+        objective: t("建立学习工作台"),
+        activity_md: t("录入首批待学习对象与问题。"),
+        next_step_md: t("先验收知识库，再开始机器人轨迹与模仿学习实验。"),
         object_ids: created.map(o => o.id)
       });
       await load();
@@ -89,7 +91,7 @@ export default function Home() {
       setBusy(false);
     }
   }
-  return <><PageTitle eyebrow="EMBODIED INTELLIGENCE / PERSONAL LAB" title="把理解连接起来" actions={<Link className="button" to="/knowledge"><Plus size={16} />记录新知识</Link>}>从机器人操作出发，沿着 VLA 与世界模型建立你的研究路径。</PageTitle><ErrorBox message={error} /><div className="stats-grid">{[[BookOpen, objects.length, '知识对象'], [Network, relations.length, '知识连接'], [Route, sessions.length, '学习记录'], [FlaskConical, runs.length, '实验运行']].map(([Icon, count, label]) => <div className="stat-card" key={label}><Icon size={18} /><strong>{count}</strong><span>{label}</span></div>)}</div><div className="home-grid"><section className="panel"><div className="section-heading"><div><span className="eyebrow">YOUR KNOWLEDGE MAP</span><h2>正在生长的知识网络</h2></div><Link to="/graph" className="text-link">探索图谱 <ArrowUpRight size={14} /></Link></div><GraphView refresh={objects.length + relations.length} onNode={id => {
+  return <><PageTitle eyebrow={t("EMBODIED INTELLIGENCE / PERSONAL LAB")} title={t("把理解连接起来")} actions={<Link className="button" to="/knowledge"><Plus size={16} />{t("记录新知识")}</Link>}>{t("从机器人操作出发，沿着 VLA 与世界模型建立你的研究路径。")}</PageTitle><ErrorBox message={error} /><div className="stats-grid">{[[BookOpen, objects.length, t("知识对象")], [Network, relations.length, t("知识连接")], [Route, sessions.length, t("学习记录")], [FlaskConical, runs.length, t("实验运行")]].map(([Icon, count, label]) => <div className="stat-card" key={t(label)}><Icon size={18} /><strong>{count}</strong><span>{t(label)}</span></div>)}</div><div className="home-grid"><section className="panel"><div className="section-heading"><div><span className="eyebrow">{t("YOUR KNOWLEDGE MAP")}</span><h2>{t("正在生长的知识网络")}</h2></div><Link to="/graph" className="text-link">{t("探索图谱")} <ArrowUpRight size={14} /></Link></div><GraphView refresh={objects.length + relations.length} onNode={id => {
           window.location.href = `/knowledge/${id}`;
-        }} />{!objects.length && !error && <div className="seed-action"><button onClick={seed} disabled={busy}>{busy ? '建立中…' : '建立首批学习对象'}</button><p>加入主题、官方仓库和待验证问题，不生成实验结果。</p></div>}</section><section className="panel"><span className="eyebrow">NEXT STEP</span><h2>当前问题与下一步</h2>{objects.filter(o => ['question', 'task'].includes(o.kind)).slice(0, 4).map(o => <Link className="focus-row" to={`/knowledge/${o.id}`} key={o.id}><Badge kind={o.kind} /><h3>{o.title}</h3><p>{o.summary}</p></Link>)}{!objects.some(o => ['question', 'task'].includes(o.kind)) && <Empty title="给学习一个问题">记录当前疑问，并写下完成条件。</Empty>}<div className="info-note">按完成条件推进。能解释、能运行、能分析局限，比阅读数量更有意义。</div></section></div><section className="panel recent-panel"><div className="section-heading"><h2>最近的理解与活动</h2><Link className="text-link" to="/timeline">查看轨迹 ↗</Link></div>{sessions.slice(0, 3).map(s => <div className="recent-row" key={s.id}><span className="timeline-dot" /><div><h3>{s.objective}</h3><p>{s.understanding_change_md || s.activity_md}</p></div><DateText value={s.occurred_at} /></div>)}{!sessions.length && <p className="muted">阅读或实验结束后，记录理解变化与下一步。</p>}</section></>;
+        }} />{!objects.length && !error && <div className="seed-action"><button onClick={seed} disabled={busy}>{busy ? t("建立中…") : t("建立首批学习对象")}</button><p>{t("加入主题、官方仓库和待验证问题，不生成实验结果。")}</p></div>}</section><section className="panel"><span className="eyebrow">{t("NEXT STEP")}</span><h2>{t("当前问题与下一步")}</h2>{objects.filter(o => ["question", "task"].includes(o.kind)).slice(0, 4).map(o => <Link className="focus-row" to={`/knowledge/${o.id}`} key={o.id}><Badge kind={o.kind} /><h3>{o.title}</h3><p>{o.summary}</p></Link>)}{!objects.some(o => ["question", "task"].includes(o.kind)) && <Empty title={t("给学习一个问题")}>{t("记录当前疑问，并写下完成条件。")}</Empty>}<div className="info-note">{t("按完成条件推进。能解释、能运行、能分析局限，比阅读数量更有意义。")}</div></section></div><section className="panel recent-panel"><div className="section-heading"><h2>{t("最近的理解与活动")}</h2><Link className="text-link" to="/timeline">{t("查看轨迹 ↗")}</Link></div>{sessions.slice(0, 3).map(s => <div className="recent-row" key={s.id}><span className="timeline-dot" /><div><h3>{s.objective}</h3><p>{s.understanding_change_md || s.activity_md}</p></div><DateText value={s.occurred_at} /></div>)}{!sessions.length && <p className="muted">{t("阅读或实验结束后，记录理解变化与下一步。")}</p>}</section></>;
 }
