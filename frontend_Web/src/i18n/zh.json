@@ -1031,5 +1031,8 @@
   "health.status.succeeded": "成功",
   "health.status.failed": "失败",
   "health.sourceUses": "{count} 篇笔记的来源",
-  "health.evidenceUses": "{count} 条证据"
+  "health.evidenceUses": "{count} 条证据",
+  "deployment.notConfigured": "云端 API 尚未配置完成，请联系网站管理员。",
+  "deployment.unavailable": "云端后端暂时无法连接，请稍后重试。",
+  "deployment.originDenied": "此地址不能直接访问，请通过网站入口打开。"
 }

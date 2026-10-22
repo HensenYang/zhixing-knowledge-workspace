@@ -1031,5 +1031,8 @@
   "health.status.succeeded": "successful",
   "health.status.failed": "failed",
   "health.sourceUses": "{count} note sources",
-  "health.evidenceUses": "{count} evidence records"
+  "health.evidenceUses": "{count} evidence records",
+  "deployment.notConfigured": "The cloud API is not configured yet. Please contact the site administrator.",
+  "deployment.unavailable": "The cloud backend is temporarily unavailable. Please try again later.",
+  "deployment.originDenied": "This address cannot be accessed directly. Please use the website entry point."
 }

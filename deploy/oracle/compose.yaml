@@ -1,0 +1,85 @@
+name: zhixing-cloud
+
+x-app: &app
+  image: zhixing-api:local
+  build:
+    context: ../..
+    dockerfile: deploy/oracle/Dockerfile
+
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Run prepare.py first}
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: &logs
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  bootstrap:
+    <<: *app
+    command: [python, -m, deploy.oracle.runtime, bootstrap]
+    environment:
+      POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Run prepare.py first}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Run prepare.py first}
+      WORKSPACE_ENV_FILE: /dev/null
+    depends_on:
+      db: {condition: service_healthy}
+    logging: *logs
+
+  api:
+    <<: *app
+    restart: unless-stopped
+    environment:
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Run prepare.py first}
+      DEPLOYMENT_PROXY_SECRET: ${API_PROXY_SECRET:?Run prepare.py first}
+      WORKSPACE_ENV_FILE: /dev/null
+      STORAGE_ROOT: /data
+      COOKIE_SECURE: "true"
+      DB_POOL_SIZE: "5"
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_TIMEOUT_SECONDS: "60"
+      LLM_MAX_OUTPUT_TOKENS: "1024"
+      LLM_TOKEN_PARAMETER: ${LLM_TOKEN_PARAMETER:-max_completion_tokens}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      ZOTERO_MCP_ENABLED: "false"
+    volumes:
+      - attachments:/data
+    ports:
+      - "127.0.0.1:8001:8001"
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, -m, deploy.oracle.runtime, health]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    stop_grace_period: 60s
+    logging: *logs
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles: [tunnel]
+    command: [tunnel, --no-autoupdate, run]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      api: {condition: service_healthy}
+    logging: *logs
+
+volumes:
+  postgres_data:
+  attachments:
