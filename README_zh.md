@@ -185,7 +185,7 @@ npx playwright test tests/i18n-language.spec.js
 
 阅读导航测试使用模拟接口。其他后端／浏览器验收可能写入测试数据，必须连接隔离测试数据库；参见测试代码中的 `TEST_DATABASE_URL` 配置，勿对个人正式数据库运行。
 
-[框架设计](docs/phase-1-design.md) · [分享包说明](docs/share-guide.md)
+[框架设计](docs/phase-1-design-zh.md) · [分享包说明](docs/share-guide.md)
 
 第三方代码、模型和数据仍受原始许可约束。案例中的官方源码快照属于本机研究缓存，不提交仓库；固定版本及原始出处见资料清单和笔记。
 

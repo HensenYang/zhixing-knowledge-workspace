@@ -1,127 +1,134 @@
-# 工程和规模化（P2）与证据健康检查（P1）
+# Engineering and Scaling (P2) and Evidence Health Checks (P1)
 
-状态：已在 `main`（个人版）上实现。后端测试 74 项、浏览器端到端 17 项通过，全新数据库可迁移到 V008。
+[Chinese version](engineering-and-evidence-health-zh.md)
 
-## 1. 后端结构（本次没有拆分 `app.py`）
+Status: implemented on `main` (personal edition). All 74 backend tests and 17 browser end-to-end tests passed. A fresh database can migrate through V008.
 
-队友的分支（分享与导入导出、LLM、Zotero、多用户、学习路径）也在大量修改 `backend/app.py`。为了让两边合并时冲突尽量小，这一版**不拆分 `app.py`**，而是把新增能力放进独立模块，`app.py` 只做局部修改：
+## 1. Backend structure (`app.py` was not split in this iteration)
+
+Teammates' branches for sharing and import/export, LLM, Zotero, multiple users, and learning paths also make extensive changes to `backend/app.py`. To reduce merge conflicts, this iteration **keeps `app.py` intact**, placing new capabilities in separate modules and making only localized changes to the existing file:
 
 ```text
 backend/
-  app.py              原有接口；本次改动：连接池、分页、批量查询、图谱邻域、异步备份恢复
-  pool.py             数据库连接池
-  paging.py           limit/offset 校验与 X-Total-Count
-  jobs.py             后台任务（/api/jobs）
-  link_checker.py     安全的链接检查器
-  evidence_health.py  证据健康检查（/api/evidence-health）
+  app.py              Existing routes; changes for pooling, pagination, batch queries,
+                      graph neighborhoods, and asynchronous backup restore
+  pool.py             Database connection pool
+  paging.py           limit/offset validation and X-Total-Count
+  jobs.py             Background jobs (/api/jobs)
+  link_checker.py     Safe link checker
+  evidence_health.py  Evidence health checks (/api/evidence-health)
 ```
 
-“后端模块拆分”留到队友的分支合进 `main` 之后，大家约好时间再统一拆（先发公告，避免多人同时改同一个文件）。
+Splitting the backend into modules is deferred until teammates' branches have merged into `main`. Coordinate the refactor and announce it first to avoid simultaneous edits to the same file.
 
-## 2. 数据库连接池
+## 2. Database connection pool
 
-- 原来每个请求都新建一条 PostgreSQL 连接。现在 `backend/pool.py`（`backend/app.py` 的 `db()` 从它取连接） 里有一个小连接池：空闲连接复用，同时最多 `DB_POOL_SIZE`（默认 10）条在用，用满时请求排队等待（最多 10 秒，超时返回 503），不会因为瞬时并发而失败。
-- 连接空闲超过 5 分钟会被丢弃；数据库重启后取到的旧连接会被丢弃并自动换一条新的再试一次；数据库没启动时立即报“无法连接”，不会白等。
-- 应用连接带 `application_name = zhixing-workspace`，在 `pg_stat_activity` 里一眼能认出。
-- 为什么不用 psycopg2 自带的连接池：它在 `minconn` 为 0 时会在归还时直接关闭连接，等于没有池化。
+- Previously, every request created a PostgreSQL connection. A small pool in `backend/pool.py`, used by `db()` in `backend/app.py`, now reuses idle connections. At most `DB_POOL_SIZE` connections are in use at once, with a default of 10. Requests queue for up to 10 seconds when the pool is full, then return 503 on timeout, absorbing short concurrency spikes.
+- Connections idle for more than five minutes are discarded. Stale connections after a database restart are discarded and replaced, with one retry. If the database is down, connection failure is reported immediately rather than waiting unnecessarily.
+- Connections use `application_name = zhixing-workspace` so they are easy to identify in `pg_stat_activity`.
+- psycopg2's built-in pool was not used because setting `minconn` to 0 causes returned connections to close immediately, defeating reuse.
 
-## 3. 查询优化与索引
+## 3. Query optimization and indexes
 
-- **N+1 查询**：笔记标签、关系证据、学习记录关联对象、运行产物、画布上关系是否已删除，原来都是“列表里每一行再查一次”，现在各用一条批量查询。测试断言列表接口的查询条数不随数据量增长（3 条）。
-- **图谱**：`/api/graph?center=&depth=` 原来把全部节点和关系读进内存再过滤；现在在数据库里按层扩展，只读邻域。不带中心时最多返回关联最多的 `limit`（默认 1000）个节点，`X-Total-Count` 给出总数，页面会提示“仅显示…个节点”。浏览器里的图谱布局随节点数急剧变慢（实测 1000 个节点约卡 15 秒，300 个约 2 秒），所以“全部图谱”页面只请求关联最多的 300 个节点；围绕某个笔记的局部图不受此限制。测试用暴力广度优先搜索对照邻域结果。
-- **索引（迁移 V006）**：外键列在 PostgreSQL 里不会自动建索引，`relation_evidence.relation_id`、`canvas_edges.canvas_id` 等一直没有；另有“未删除记录”的部分索引、回收站索引。
-- **搜索**：关键词里的 `%`、`_` 原来被当成通配符（搜“100%”会匹配一切），现在按字面匹配。
-- **文本搜索索引**：加了 `pg_trgm` 三元组索引，扩展装不上时迁移会跳过而不是失败。**注意：** 它只对数据库字符集能识别的字符有效；字符集为 `C` 的数据库对汉字不生成三元组，中文搜索不会因此变快（我们的测试库就是这种情况）。实测中文搜索 5000 篇笔记约 25–30 毫秒，本来就不慢。
+- **N+1 queries:** note tags, relation evidence, objects linked to learning logs, run artifacts, and checks for deleted canvas relations previously required an extra query for each list row. Each now uses one batch query. Tests assert that list endpoints use a fixed three queries regardless of data volume.
+- **Graph:** `/api/graph?center=&depth=` previously loaded every node and relation into memory before filtering. It now expands neighborhoods layer by layer in the database and reads only the relevant neighborhood. Without a center, it returns up to `limit` nodes with the most connections, defaulting to 1000. `X-Total-Count` reports the total, and the page indicates when only a subset is displayed. Browser layout slows sharply with node count: measurements showed about 15 seconds for 1000 nodes and two seconds for 300. The global graph page therefore requests only the 300 most connected nodes; a local graph around a note is not subject to that same cap. Tests compare neighborhood results against a brute-force breadth-first search.
+- **Indexes (migration V006):** PostgreSQL does not automatically index foreign key columns. Columns such as `relation_evidence.relation_id` and `canvas_edges.canvas_id` lacked indexes. The migration also adds partial indexes for records that are not deleted and indexes for the trash.
+- **Search:** `%` and `_` in search terms were previously interpreted as wildcards, so a search such as “100%” produced overly broad matches. They are now matched literally.
+- **Text search indexes:** `pg_trgm` trigram indexes have been added. If the extension cannot be installed, the migration skips them instead of failing. **Caveat:** trigram generation depends on character classification in the database locale. A database using the `C` locale does not generate trigrams for Chinese characters, so these indexes do not accelerate Chinese searches in that environment, including our test database. Measured Chinese searches across 5000 notes already took about 25–30 ms.
 
-## 4. 分页约定
+## 4. Pagination conventions
 
-列表接口仍返回普通 JSON 数组（前端兼容），总数放在响应头 `X-Total-Count`，参数 `limit`、`offset`：
+List endpoints continue returning ordinary JSON arrays for frontend compatibility. Totals are provided in the `X-Total-Count` response header, with `limit` and `offset` parameters:
 
-| 接口 | 默认 limit | 最大 |
+| Endpoint | Default limit | Maximum |
 |---|---|---|
 | `/api/objects` | 200 | 1000 |
 | `/api/relations` | 5000 | 20000 |
-| `/api/sessions`、`/api/runs`、`/api/canvases`、`/api/trash` | 200 | 1000 |
-| `/api/graph`（节点数；页面的全图只请求 300） | 1000 | 5000 |
+| `/api/sessions`, `/api/runs`, `/api/canvases`, `/api/trash` | 200 | 1000 |
+| `/api/graph` (node count; the global graph page requests 300) | 1000 | 5000 |
 
-页面：知识与资料（每页 24 条）、回收站（每页 50 条，清空当前页会回到上一页）、学习轨迹（最近 200 条，“再加载 200 条”）、首页（只取 3～4 行和各项总数）。
+UI behavior: knowledge and materials show 24 items per page; trash shows 50 and returns to the previous page when the current one becomes empty; the timeline starts with the latest 200 entries and can load 200 more; the home page requests only three or four rows and the relevant totals.
 
-**已知上限**：关系编辑的选择器、图谱页、画布仍一次读取最多 1000 篇笔记／所有关系，超过这个规模时选择器会看不全。这是前端的上限，不是后端的。
+**Known limit:** relation selectors, the graph page, and canvases still read at most 1000 notes and all relations in one request. Selectors cannot show every note beyond that scale. This is a frontend limit, not a backend limit.
 
-## 5. 后台任务
+## 5. Background jobs
 
-- 备份恢复原来在请求里同步执行（最大 128 MB），页面一直卡到完成或超时。现在：校验备份和检测 ID 冲突仍然同步（冲突立即返回 409），通过后创建后台任务并返回 **202 + job_id**，设置页轮询 `/api/jobs/{id}` 显示进度条；离开页面再回来会接着显示。
-- 任务记录在 `background_jobs` 表（迁移 V007）：状态、进度、结果、错误。备份恢复由一个工作线程逐个执行；链接检查（要等外部网站，可能要几分钟）有自己的线程，不会挡住恢复。服务重启时，上次未完成的任务会被标记为“失败：服务重启，任务被中断”，不会永远停在“进行中”。
-- 恢复仍是一个事务；失败时回滚数据库，并删除已经写出的附件文件（有测试）。
-- 证据健康检查里的“检查链接”用同一套任务机制。
+- Backup restore previously ran synchronously inside the request, with a maximum backup size of 128 MB, leaving the page waiting until completion or timeout. Backup validation and ID conflict detection remain synchronous, with conflicts returning 409 immediately. After validation, the API creates a background job and returns **202 + job_id**. Settings polls `/api/jobs/{id}` for progress; leaving and returning to the page resumes the display.
+- The `background_jobs` table, introduced in V007, stores status, progress, results, and errors. One worker processes restore jobs sequentially. Link checking has its own thread because external sites can take minutes to respond, so it does not block restores. On service restart, unfinished jobs are marked failed with a message that the restart interrupted them, rather than remaining in progress indefinitely.
+- Restore remains transactional: on failure, database changes roll back and newly written attachment files are removed. Tests cover this behavior.
+- The evidence health page's link checker uses the same job mechanism.
 
-## 6. 实测
+## 6. Measurements
 
-在同一台机器上，用 `scripts/seed_scale_data.py` 生成 5000 篇笔记、1.5 万条关系（60% 有证据）、500 条学习记录和运行，对比压缩包原版代码和现在的代码；每个接口取 3～5 次的中位数，**返回的数据量相同**：
+On the same machine, `scripts/seed_scale_data.py` generated 5000 notes, 15,000 relations with evidence on 60%, and 500 learning logs and runs. The original code from the archive was compared with the updated code. Each endpoint was measured three to five times, taking the median, with **equal response data volumes**:
 
-| 接口 | 原版 | 现在 | 倍数 |
+| Endpoint | Original | Updated | Speedup |
 |---|---|---|---|
-| 笔记列表，200 条 | 28 ms | 11 ms | 2.4× |
-| 笔记列表，1000 条 | 110 ms | 41 ms | 2.7× |
-| 全部关系（1.5 万条） | 4192 ms | 379 ms | 11× |
-| 全部学习记录（500 条） | 35 ms | 15 ms | 2.3× |
-| 全部运行记录（500 条） | 65 ms | 28 ms | 2.3× |
-| 局部图谱（中心节点，两层） | 110 ms | 47 ms | 2.4× |
-| 全图，5000 个节点 | 271 ms | 296 ms | 无提升 |
-| 40 路并发读取 | 435 次/秒 | 729 次/秒 | 1.7× |
+| Note list, 200 items | 28 ms | 11 ms | 2.4× |
+| Note list, 1000 items | 110 ms | 41 ms | 2.7× |
+| All relations (15,000) | 4192 ms | 379 ms | 11× |
+| All learning logs (500) | 35 ms | 15 ms | 2.3× |
+| All runs (500) | 65 ms | 28 ms | 2.3× |
+| Local graph (center node, two hops) | 110 ms | 47 ms | 2.4× |
+| Full graph, 5000 nodes | 271 ms | 296 ms | No improvement |
+| 40 concurrent readers | 435 requests/s | 729 requests/s | 1.7× |
 
-全图在节点数相同时没有变快（主要耗时在序列化 5 MB 数据）；它的收益来自默认只返回 1000 个节点：约 55 ms、0.8 MB，而原版是 271 ms、5.3 MB。证据健康检查的 9 项合计约 130 ms（同一份数据）。测量机器是一台 Mac，PostgreSQL 17，本机回环连接；数字用来比较前后，不代表你们的机器。复现：
+The full graph did not improve at an equal node count because serializing roughly 5 MB dominated its response time. Its benefit comes from returning only 1000 nodes by default: about 55 ms and 0.8 MB, compared with the original 271 ms and 5.3 MB. All nine evidence health checks together took about 130 ms on the same dataset.
+
+Measurements used a Mac with PostgreSQL 17 over a loopback connection. These figures compare the two versions and do not predict performance on other machines. To reproduce:
 
 ```powershell
-$env:DATABASE_URL = "测试库地址"
+$env:DATABASE_URL = "TEST_DATABASE_URL"
 python scripts/seed_scale_data.py --schema bench --objects 5000
-# 用 KNOWLEDGE_SCHEMA=bench 启动后端，然后：
+# Start the backend with KNOWLEDGE_SCHEMA=bench, then:
 python scripts/benchmark_api.py http://127.0.0.1:8001
 ```
 
-模块结构调整成现在的样子之后，用同样的脚本和数据量重新测了一次新版本：笔记列表前 200 条 11 ms，全部关系（1.5 万条）135 ms，全图 54 ms（0.8 MB，默认只含 1000 个节点），40 路并发 759 次/秒，与上表一致。
+After reorganizing the modules into their current structure, the updated version was measured again with the same scripts and data volume: 11 ms for the first 200 notes, 135 ms for all 15,000 relations, 54 ms for the default 1000-node graph (0.8 MB), and 759 requests/s with 40 concurrent readers. The overall performance pattern remained consistent with the table.
 
-## 7. 测试与 CI
+## 7. Tests and CI
 
-- 后端测试的 `client` 夹具在 `backend/tests/conftest.py`：每个用例一个独立 schema 和独立附件目录，结束后删除；必须设置 `TEST_DATABASE_URL`（隔离的测试库）。
-- 新增测试：查询条数、分页、图谱对照暴力搜索、连接池（复用、等待、过期、被杀掉的连接恢复、并发上限）、后台任务（进度、失败、重启恢复、失败时清理附件、慢速链接检查不阻塞恢复）、链接检查器、证据健康的每项检查、迁移规范。
-- **迁移规范测试**：版本号不能重复，文件名必须形如 `V###__snake_name.sql`，文件里必须登记自己的版本。本次新增的迁移是 V006–V008（队友的分支占用了 V003–V005）；以后多人同时加迁移撞号，会在合并前就红灯。
-- 端到端：`python scripts/run_e2e.py [playwright 参数]` 在测试库里建一个临时 schema，启动后端（8002）和前端（5175），跑完删除，**不会碰你的正式数据**。同一次运行里的用例共用这个临时库，所以新增的用例都按“总数”断言，不依赖库是空的。
-- CI（`.github/workflows/ci.yml`）：后端（pyflakes + pytest + 全新数据库迁移）、前端构建、浏览器端到端（用 Postgres 服务容器）。我无法在本机运行 GitHub Actions；第一次在 GitHub 上运行时可能需要小调整。
+- The backend `client` fixture in `backend/tests/conftest.py` creates a separate schema and attachment directory for each test and removes them afterward. `TEST_DATABASE_URL` must point to an isolated test database.
+- Added tests cover query counts, pagination, graph neighborhoods compared with brute-force search, connection pooling (reuse, waiting, expiry, recovery from terminated connections, and concurrency limits), background jobs (progress, failure, restart recovery, attachment cleanup, and slow link checks not blocking restores), the link checker, each evidence health check, and migration conventions.
+- **Migration convention tests:** version numbers must be unique, filenames must follow `V###__snake_name.sql`, and each migration must register its own version. This iteration uses V006–V008 because teammates' branches use V003–V005. Future version collisions can therefore fail checks before merging.
+- End-to-end tests: `python scripts/run_e2e.py [Playwright arguments]` creates a temporary schema in the test database, starts the backend on 8002 and frontend on 5175, and removes the schema afterward. **Production data is not touched.** Tests within a run share the temporary database, so new assertions account for totals rather than assuming an empty database.
+- CI in `.github/workflows/ci.yml` covers the backend (pyflakes, pytest, and fresh database migrations), frontend build, and browser end-to-end tests using a PostgreSQL service container. GitHub Actions was not run locally for this implementation; the first hosted run may require minor adjustments.
 
-## 8. 证据健康检查
+## 8. Evidence health checks
 
-页面“证据健康”，接口 `GET /api/evidence-health`（概览）、`GET /api/evidence-health/{检查项}`（分页明细）、`POST /api/evidence-health/link-check`（后台检查链接）。只读，不修改任何数据；只统计未删除、未归档的记录。
+The “Evidence health” page uses `GET /api/evidence-health` for the overview, `GET /api/evidence-health/{check}` for paginated details, and `POST /api/evidence-health/link-check` for background link checks. Audits are read-only with respect to knowledge records and count only records that are neither deleted nor archived.
 
-| 检查项 | 级别 | 判定 |
+| Check | Severity | Rule |
 |---|---|---|
-| 证据本身有问题 | 错误 | 证据指向已删除的笔记，或来源地址不是 http(s) |
-| 失效链接 | 错误 | 链接检查得到 404／410、域名无法解析、连接失败 |
-| 关系没有证据 | 警告 | 关系没有任何证据行 |
-| 尚未验证的实验声明 | 警告 | 实验对象“支持／质疑／评测”了某对象，却没有成功的运行；或理解程度标成“能实现／能复现”，却没有关联的成功实验 |
-| 无法复现的运行记录 | 警告 | 成功的运行缺命令、代码提交、配置或指标；失败的运行没写失败原因 |
-| 资料可能已过期 | 警告／提示 | 来源类笔记的 `verified_on` 早于设定天数（警告），或没有记录（提示） |
-| 依赖关系成环 | 警告 | “依赖”关系形成环（强连通分量，并列出一条具体的环） |
-| 证据没有定位 | 提示 | 关系有证据但都没有页码、章节、行号 |
-| 被支持也被质疑的结论 | 提示 | 同一个对象既被“支持”又被“质疑” |
+| Problematic evidence | Error | Evidence points to a deleted note, or its source URL is not HTTP(S) |
+| Broken links | Error | Link checking returns 404/410, DNS resolution fails, or the connection fails |
+| Relations without evidence | Warning | A relation has no evidence rows |
+| Unverified experiment claims | Warning | An experiment supports, questions, or evaluates an object without a successful run; or mastery is marked as able to implement/reproduce without a linked successful experiment |
+| Non-reproducible runs | Warning | A successful run lacks a command, code commit, configuration, or metrics; or a failed run lacks a failure reason |
+| Possibly outdated sources | Warning / Info | A source note's `verified_on` is older than the configured threshold (warning), or is missing (info) |
+| Dependency cycles | Warning | Dependency relations form a cycle; identify strongly connected components and show a concrete cycle |
+| Evidence without a locator | Info | A relation has evidence, but none includes a page, chapter, or line locator |
+| Conclusions both supported and questioned | Info | The same object is both supported and questioned |
 
-在宇树案例库上的结果：91 条关系中 48 条没有证据（覆盖率 47.3%），43 条证据没有任何定位，3 条实验声明没有成功运行，4 个对象既被支持又被质疑。
+Results on the Unitree case collection: 48 of 91 relations had no evidence, giving 47.3% coverage; 43 evidence entries lacked locators; three experiment claims had no successful run; and four objects were both supported and questioned.
 
-**链接检查的设计**：会联网访问笔记和证据里的外部地址。因为笔记可能是导入来的，链接不能成为探测本机或内网的手段：每一跳先解析域名，只要有一个地址不是公网地址（本机、内网、链路本地如 169.254.169.254、共享地址段）就不发请求；请求发往已检查过的 IP，同时保留原域名做 Host 和 TLS 校验，防止域名之后解析到别处；重定向每一跳都重新检查。判定：404／410 和连不上为失效；401／403／429／5xx 为“无法判断”，不算失效；如果绝大多数链接都连不上，会认为是本机网络问题，不保存结果。已在真实的 GitHub、arXiv、Hugging Face 地址上验证过。24 小时内检查过的链接不会重复检查（可“全部重新检查”）。
+**Link checker design:** the checker requests external URLs from notes and evidence. Since notes may be imported, links must not become a way to probe the local machine or private network. Before each request, resolve the hostname and refuse the request if any address is not public, including loopback, private, link-local addresses such as 169.254.169.254, and shared address ranges. Connect to the validated IP while retaining the original hostname for the Host header and TLS verification to prevent DNS rebinding. Revalidate every redirect hop.
 
-**做不到的**：规则只能发现“结构上”的矛盾（成环、同时被支持和质疑）。两篇资料在**语义上**互相矛盾（说法相反）无法靠规则发现，需要人工判断，或之后让 AI 辅助；“被支持也被质疑”列表就是给人工复核的入口。
+404/410 and connection failures count as broken links. 401/403/429/5xx are indeterminate rather than broken. If the vast majority of connections fail, treat this as a local network problem and do not save the results. The checker has been verified against real GitHub, arXiv, and Hugging Face URLs. URLs checked within 24 hours are cached unless the user chooses to recheck all links.
 
-## 9. 已知限制
+**Limitations:** rules detect structural issues, such as dependency cycles or an object being both supported and questioned. They cannot detect semantic contradictions between two sources. Those require human judgment or future AI assistance; the supported-and-questioned list provides an entry point for manual review.
 
-- 前端选择器和图谱页的 1000 篇笔记上限（见第 4 节）。
-- 中文搜索不依赖索引（见第 3 节）。
-- 后台任务是进程内的工作线程（恢复一条、链接检查一条）：只适合单机单进程，不要用多个 uvicorn 工作进程运行（每个进程启动时都会把“进行中”的任务标记为中断）。
-- 链接检查结果表 `link_checks` 按 URL 存放，只含“这个公开地址能不能打开”。
+## 9. Known limitations
 
-## 10. 与多用户 main 的合并结果（2026-10-23）
+- Frontend selectors and the graph page have a 1000-note limit; see section 4.
+- Chinese search does not rely on indexes in the tested environment; see section 3.
+- Background jobs use in-process worker threads: one for restore and one for link checking. This supports a single machine with a single process. Do not run multiple uvicorn workers, because each process marks in-progress jobs as interrupted at startup.
+- The `link_checks` table is keyed by URL and stores only public URL reachability results.
 
-- 那个分支有自己的 V003–V005，这里的迁移已经避开（V006–V008），不会撞号。
-- 已加入 V009：`background_jobs` 增加 `workspace_id`、`created_by`，默认值取自当前事务的请求上下文；启用并强制行级安全。启动恢复使用事务内 `app.system='jobs'` 标记。无法确认归属的旧任务不会分配给任意用户，也不会对用户可见。对象、关系、画布、学习日志和实验运行补上工作区优先的列表索引。
-- `db()` 与认证用 `raw_db()` 已整合连接池，保留事务内 `app.workspace_id` / `app.user_id`；后台线程复制请求上下文。回收站分页同时保留学习路径的工作区过滤。
-- 保留 main 的资料导入导出、学习路径、团队协作与中英文界面；证据健康、分页、图谱截断提示和后台恢复进度均配有双语文案。
-- 数据库测试必须改用非超级用户连接，否则行级安全不生效。
+## 10. Integration with multi-user main (2026-10-23)
+
+- The other branch has its own V003–V005 migrations. These changes use V006–V008 to avoid version collisions.
+- V009 adds `workspace_id` and `created_by` to `background_jobs`, defaulting to the current transaction's request context, and enables and forces row-level security. Startup recovery uses the transaction-local marker `app.system='jobs'`. Legacy jobs with unknown ownership are neither assigned to arbitrary users nor exposed to users. Workspace-first list indexes were added for objects, relations, canvases, learning logs, and experiment runs.
+- Both `db()` and authentication's `raw_db()` use the connection pool while retaining transaction-local `app.workspace_id` and `app.user_id`. Background threads copy the request context. Trash pagination retains workspace filtering for learning paths.
+- Main's source import/export, learning paths, team collaboration, and Chinese/English interface are preserved. Evidence health, pagination, graph truncation notices, and background restore progress all have bilingual messages.
+- Database tests must use a non-superuser connection so row-level security takes effect.
