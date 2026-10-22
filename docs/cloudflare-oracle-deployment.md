@@ -128,9 +128,9 @@ Workers & Pages → Create application → **Pages** → Connect Git repository�
 - `API_ORIGIN=https://origin.example.com`：不要带 `/api` 或其他路径。
 - `API_PROXY_SECRET`：复制服务器 `.env` 中同名值，保存为 **Secret**。这是运行时变量，不要命名为 `VITE_*`。
 
-保存后部署/重新部署。`frontend_Web/functions/api/[[path]].js` 由 Pages Git 构建自动部署为 Function；`dist` 文件夹拖拽上传不会自动带上 Functions，不要使用这种上传方式。开发预览环境建议另配测试后端；不配置时会显示 API 未配置。
+保存后部署/重新部署。`frontend_Web/functions/api/[[path]].js` 由 Pages Git 构建自动部署为 Function；普通 `dist` 文件夹拖拽上传不会自动带上 Functions。若 GitHub 授权无法访问仓库，可先执行 `npm run build:pages-upload`，它会在 `dist` 中生成官方支持的 `_worker.js`，再上传整个目录或其 ZIP；这种项目后续需重新上传构建结果，不会自动跟随 Git 提交。开发预览环境建议另配测试后端；不配置时会显示 API 未配置。
 
-Set the origin URL and matching server-only proxy secret in the production environment, then redeploy. Use Git integration to include Functions. Do not expose these values as Vite variables. Deploying only the static build directory is insufficient.
+Set the origin URL and matching server-only proxy secret in the production environment, then redeploy. Use Git integration to include Functions, or run `npm run build:pages-upload` before dashboard Direct Upload to include the advanced-mode `_worker.js` proxy. Direct Upload projects need manual redeployment and cannot be switched to Git integration in place. Do not expose these values as Vite variables. A plain static build is insufficient.
 
 先用 `*.pages.dev` 地址验证，再在 Pages → Custom domains 添加 `app.example.com`。前端域名与 Tunnel 源站域名必须不同。
 

@@ -52,7 +52,7 @@ VM 准备好后，从 [部署指南第 3 节](cloudflare-oracle-deployment.md#3-
 2. 同步已包含部署配置的代码，生成服务器 `.env`。
 3. 启动数据库和后端；确认迁移和容器健康。
 4. 创建 Cloudflare Tunnel，源站子域名指向 `http://api:8001`。
-5. Pages 连接 GitHub，Root directory 为 `frontend_Web`，构建为 `npm run build`，输出为 `dist`。
+5. Pages 连接 GitHub，Root directory 为 `frontend_Web`，构建为 `npm run build`，输出为 `dist`。协作者仓库未授权给 Cloudflare 时，执行 `npm run build:pages-upload`，直接上传包含 `_worker.js` 的 `dist` 文件夹或 ZIP。
 6. 配置 Pages 的 `API_ORIGIN` 和 Secret `API_PROXY_SECRET`，绑定前端域名，再验证登录、附件和数据持久化。
 
 Skip that guide's Oracle account and instance steps. Its Oracle Always Free quotas and reclamation rules do not describe Azure. The container image, V001–V009 migration, and API/database health were verified on an Azure Ubuntu 24.04 x64 VM with 2 vCPUs and 4 GiB RAM on 2026-10-23. ARM still requires separate verification.
