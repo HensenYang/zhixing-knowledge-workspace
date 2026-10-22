@@ -1,7 +1,7 @@
 import { t, useLanguage } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import cytoscape from "cytoscape";
-import { api } from "../services/api";
+import { apiPage } from "../services/api";
 import { COLORS, RELATIONS, Empty, ErrorBox } from "./shared";
 export default function GraphView({
   center,
@@ -24,7 +24,7 @@ export default function GraphView({
   const [summary, setSummary] = useState({
     nodes: 0,
     edges: 0,
-    title: ""
+    title: "", hidden: 0
   });
   const handlers = useRef({
     onNode,
@@ -40,7 +40,7 @@ export default function GraphView({
     let alive = true,
       graph;
     setError("");
-    api(`/graph${center ? `?center=${center}&depth=${depth}` : ""}`).then(data => {
+    apiPage(`/graph${center ? `?center=${center}&depth=${depth}` : "?limit=300"}`).then(({items:data,total}) => {
       if (!alive) return;
       let edges = data.edges.filter(edge => !relationType || edge.relation_type === relationType);
       const distances = new Map(center ? [[center, 0]] : []);
@@ -62,7 +62,7 @@ export default function GraphView({
       setSummary({
         nodes: nodes.length,
         edges: edges.filter(e => ids.has(e.source_id) && ids.has(e.target_id)).length,
-        title: nodes.find(n => n.id === center)?.title || ""
+        title: nodes.find(n => n.id === center)?.title || "", hidden: center ? 0 : Math.max(0,total-data.nodes.length)
       });
       setEmpty(!nodes.length);
       graph = cytoscape({
@@ -208,5 +208,5 @@ export default function GraphView({
       }) : t("知识图谱"),
       "1": summary.nodes,
       "2": summary.edges
-    })} data-center={center || ""} data-node-count={summary.nodes} data-edge-count={summary.edges} ref={container} />{empty && <div className="graph-overlay"><Empty title={t("先建立几个知识对象")}>{t("添加关系后，知识网络会在这里展开。")}</Empty></div>}<div className="graph-error"><ErrorBox message={error} /></div><span className="graph-hint">{t("滚轮缩放 · 拖动节点 · 点击查看")}</span></div>;
+    })} data-center={center || ""} data-node-count={summary.nodes} data-edge-count={summary.edges} ref={container} />{summary.hidden > 0 && <div className="graph-note" role="status">{t("仅显示连接最多的 {shown} 个节点，还有 {hidden} 个未显示。请搜索或用局部图查看其他内容。", {shown:summary.nodes,hidden:summary.hidden})}</div>}{empty && <div className="graph-overlay"><Empty title={t("先建立几个知识对象")}>{t("添加关系后，知识网络会在这里展开。")}</Empty></div>}<div className="graph-error"><ErrorBox message={error} /></div><span className="graph-hint">{t("滚轮缩放 · 拖动节点 · 点击查看")}</span></div>;
 }

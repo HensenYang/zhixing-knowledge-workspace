@@ -1,7 +1,6 @@
 import asyncio
 from contextlib import contextmanager
 import io
-import json
 import os
 from pathlib import Path
 from types import SimpleNamespace

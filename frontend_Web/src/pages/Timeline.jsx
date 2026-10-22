@@ -2,7 +2,7 @@ import { t, useLanguage } from "../i18n";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Plus } from "lucide-react";
-import { api, write } from "../services/api";
+import { api, apiPage, write } from "../services/api";
 import { PageTitle, Field, ErrorBox, Empty, DateText, Markdown } from "../components/shared";
 import { DeleteButton, useWorkspaceChanges } from "../components/RecordActions";
 const blank = {
@@ -21,15 +21,13 @@ export default function Timeline() {
     [show, setShow] = useState(false),
     [form, setForm] = useState(blank),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  const load = () => Promise.all([api("/sessions"), api("/runs"), api("/objects?limit=1000&archived=true")]).then(([s, r, o]) => {
-    setSessions(s);
-    setRuns(r);
-    setObjects(o);
+    [busy, setBusy] = useState(false), [limit, setLimit] = useState(200), [totals, setTotals] = useState({sessions:0,runs:0});
+  const load = () => Promise.all([apiPage(`/sessions?limit=${limit}`), apiPage(`/runs?limit=${limit}`), api('/objects?limit=1000&archived=true')]).then(([s,r,o]) => {
+    setSessions(s.items); setRuns(r.items); setTotals({sessions:s.total,runs:r.total}); setObjects(o);
   }).catch(e => setError(e.message));
   useEffect(() => {
     load();
-  }, []);
+  }, [limit]);
   useWorkspaceChanges(load);
   const change = (key, value) => setForm({
     ...form,
@@ -78,5 +76,5 @@ export default function Timeline() {
                 succeeded: t("已完成"),
                 failed: t("失败"),
                 cancelled: t("已取消")
-              }[event.status]}</span><Markdown>{event.result_md || event.failure_md || event.hypothesis_md}</Markdown><Link className="text-link" to="/experiments">{t("查看运行配置 ↗")}</Link></>}</div></article>)}</div>{!events.length && !error && <Empty title={t("你的学习轨迹从这里开始")} />}</>;
+              }[event.status]}</span><Markdown>{event.result_md || event.failure_md || event.hypothesis_md}</Markdown><Link className="text-link" to="/experiments">{t("查看运行配置 ↗")}</Link></>}</div></article>)}</div>{(sessions.length<totals.sessions || runs.length<totals.runs) && <div className="info-note" role="status">{t('只显示最近的 {sessions} 条学习记录和 {runs} 条实验运行，共 {totalSessions} 条学习记录、{totalRuns} 条实验运行。',{sessions:sessions.length,runs:runs.length,totalSessions:totals.sessions,totalRuns:totals.runs})}{limit<1000 && <button className="ghost" onClick={()=>setLimit(n=>n+200)}>{t('再加载 200 条')}</button>}</div>}{!events.length && !error && <Empty title={t("你的学习轨迹从这里开始")} />}</>;
 }

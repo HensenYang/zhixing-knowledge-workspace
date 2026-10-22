@@ -1,10 +1,11 @@
+import EvidenceHealth from './pages/EvidenceHealth';
 import { t, msg, useLanguage } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, BookOpen, Network, PanelsTopLeft, Route as RouteIcon,
   FlaskConical, Settings as SettingsIcon, Search, Menu, Leaf,
-  Archive as ArchiveIcon, Upload, ListOrdered, Users, LogOut
+  Archive as ArchiveIcon, ShieldCheck, Upload, ListOrdered, Users, LogOut
 } from "lucide-react";
 import { api } from "./services/api";
 import { useAuth } from "./contexts/AuthContext";
@@ -30,6 +31,7 @@ const navigation = [
   ["/imports", Upload, msg("资料导入")],
   ["/paths", ListOrdered, msg("研究学习路径")],
   ["/graph", Network, msg("知识图谱")],
+  ["/health", ShieldCheck, msg("证据健康")],
   ["/canvases", PanelsTopLeft, msg("自由画布")],
   ["/timeline", RouteIcon, msg("学习轨迹")],
   ["/experiments", FlaskConical, msg("实验与复现")],
@@ -122,7 +124,7 @@ function WorkspaceApp() {
         <Route path="/imports" element={<Imports />} />
         <Route path="/paths" element={<LearningPathList />} />
         <Route path="/paths/:id" element={<LearningPathEditor />} />
-        <Route path="/graph" element={<Graph />} />
+        <Route path="/graph" element={<Graph />} /><Route path="/health" element={<EvidenceHealth />} />
         <Route path="/canvases" element={<CanvasList />} />
         <Route path="/canvases/:id" element={<CanvasEditor />} />
         <Route path="/timeline" element={<Timeline />} />

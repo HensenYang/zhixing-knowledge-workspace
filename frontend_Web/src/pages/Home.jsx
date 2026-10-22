@@ -2,25 +2,17 @@ import { t, useLanguage } from "../i18n";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, Plus, Network, BookOpen, FlaskConical, Route } from "lucide-react";
-import { api, write } from "../services/api";
+import { apiPage, write } from "../services/api";
 import { PageTitle, Badge, ErrorBox, DateText, Empty } from "../components/shared";
 import { useWorkspaceChanges } from "../components/RecordActions";
 import GraphView from "../components/GraphView";
 export default function Home() {
   useLanguage();
-  const [objects, setObjects] = useState([]),
-    [sessions, setSessions] = useState([]),
-    [runs, setRuns] = useState([]),
-    [relations, setRelations] = useState([]),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  const load = () => Promise.all([api("/objects?limit=1000"), api("/sessions"), api("/runs"), api("/relations")]).then(([o, s, r, e]) => {
-    setObjects(o);
-    setSessions(s);
-    setRuns(r);
-    setRelations(e);
-    setError("");
-  }).catch(e => setError(e.message));
+  const [totals, setTotals] = useState({objects:0,relations:0,sessions:0,runs:0}), [focus,setFocus] = useState([]), [recent,setRecent] = useState([]), [error,setError] = useState(''), [busy,setBusy] = useState(false);
+  const load = () => Promise.all(['/objects?limit=1','/objects?kind=question&limit=4','/objects?kind=task&limit=4','/sessions?limit=3','/runs?limit=1','/relations?limit=1'].map(path=>apiPage(path))).then(([all,questions,tasks,sessions,runs,relations]) => {
+    setTotals({objects:all.total,relations:relations.total,sessions:sessions.total,runs:runs.total});
+    setFocus([...questions.items,...tasks.items].sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||'')).slice(0,4));setRecent(sessions.items);setError('');
+  }).catch(e=>setError(e.message));
   useEffect(() => {
     load();
   }, []);
@@ -91,7 +83,7 @@ export default function Home() {
       setBusy(false);
     }
   }
-  return <><PageTitle eyebrow={t("EMBODIED INTELLIGENCE / PERSONAL LAB")} title={t("把理解连接起来")} actions={<Link className="button" to="/knowledge"><Plus size={16} />{t("记录新知识")}</Link>}>{t("从机器人操作出发，沿着 VLA 与世界模型建立你的研究路径。")}</PageTitle><ErrorBox message={error} /><div className="stats-grid">{[[BookOpen, objects.length, t("知识对象")], [Network, relations.length, t("知识连接")], [Route, sessions.length, t("学习记录")], [FlaskConical, runs.length, t("实验运行")]].map(([Icon, count, label]) => <div className="stat-card" key={t(label)}><Icon size={18} /><strong>{count}</strong><span>{t(label)}</span></div>)}</div><div className="home-grid"><section className="panel"><div className="section-heading"><div><span className="eyebrow">{t("YOUR KNOWLEDGE MAP")}</span><h2>{t("正在生长的知识网络")}</h2></div><Link to="/graph" className="text-link">{t("探索图谱")} <ArrowUpRight size={14} /></Link></div><GraphView refresh={objects.length + relations.length} onNode={id => {
+  return <><PageTitle eyebrow={t("EMBODIED INTELLIGENCE / PERSONAL LAB")} title={t("把理解连接起来")} actions={<Link className="button" to="/knowledge"><Plus size={16} />{t("记录新知识")}</Link>}>{t("从机器人操作出发，沿着 VLA 与世界模型建立你的研究路径。")}</PageTitle><ErrorBox message={error} /><div className="stats-grid">{[[BookOpen, totals.objects, t("知识对象")], [Network, totals.relations, t("知识连接")], [Route, totals.sessions, t("学习记录")], [FlaskConical, totals.runs, t("实验运行")]].map(([Icon, count, label]) => <div className="stat-card" key={t(label)}><Icon size={18} /><strong>{count}</strong><span>{t(label)}</span></div>)}</div><div className="home-grid"><section className="panel"><div className="section-heading"><div><span className="eyebrow">{t("YOUR KNOWLEDGE MAP")}</span><h2>{t("正在生长的知识网络")}</h2></div><Link to="/graph" className="text-link">{t("探索图谱")} <ArrowUpRight size={14} /></Link></div><GraphView refresh={totals.objects + totals.relations} onNode={id => {
           window.location.href = `/knowledge/${id}`;
-        }} />{!objects.length && !error && <div className="seed-action"><button onClick={seed} disabled={busy}>{busy ? t("建立中…") : t("建立首批学习对象")}</button><p>{t("加入主题、官方仓库和待验证问题，不生成实验结果。")}</p></div>}</section><section className="panel"><span className="eyebrow">{t("NEXT STEP")}</span><h2>{t("当前问题与下一步")}</h2>{objects.filter(o => ["question", "task"].includes(o.kind)).slice(0, 4).map(o => <Link className="focus-row" to={`/knowledge/${o.id}`} key={o.id}><Badge kind={o.kind} /><h3>{o.title}</h3><p>{o.summary}</p></Link>)}{!objects.some(o => ["question", "task"].includes(o.kind)) && <Empty title={t("给学习一个问题")}>{t("记录当前疑问，并写下完成条件。")}</Empty>}<div className="info-note">{t("按完成条件推进。能解释、能运行、能分析局限，比阅读数量更有意义。")}</div></section></div><section className="panel recent-panel"><div className="section-heading"><h2>{t("最近的理解与活动")}</h2><Link className="text-link" to="/timeline">{t("查看轨迹 ↗")}</Link></div>{sessions.slice(0, 3).map(s => <div className="recent-row" key={s.id}><span className="timeline-dot" /><div><h3>{s.objective}</h3><p>{s.understanding_change_md || s.activity_md}</p></div><DateText value={s.occurred_at} /></div>)}{!sessions.length && <p className="muted">{t("阅读或实验结束后，记录理解变化与下一步。")}</p>}</section></>;
+        }} />{!totals.objects && !error && <div className="seed-action"><button onClick={seed} disabled={busy}>{busy ? t("建立中…") : t("建立首批学习对象")}</button><p>{t("加入主题、官方仓库和待验证问题，不生成实验结果。")}</p></div>}</section><section className="panel"><span className="eyebrow">{t("NEXT STEP")}</span><h2>{t("当前问题与下一步")}</h2>{focus.map(o => <Link className="focus-row" to={`/knowledge/${o.id}`} key={o.id}><Badge kind={o.kind} /><h3>{o.title}</h3><p>{o.summary}</p></Link>)}{!focus.length && <Empty title={t("给学习一个问题")}>{t("记录当前疑问，并写下完成条件。")}</Empty>}<div className="info-note">{t("按完成条件推进。能解释、能运行、能分析局限，比阅读数量更有意义。")}</div></section></div><section className="panel recent-panel"><div className="section-heading"><h2>{t("最近的理解与活动")}</h2><Link className="text-link" to="/timeline">{t("查看轨迹 ↗")}</Link></div>{recent.map(s => <div className="recent-row" key={s.id}><span className="timeline-dot" /><div><h3>{s.objective}</h3><p>{s.understanding_change_md || s.activity_md}</p></div><DateText value={s.occurred_at} /></div>)}{!totals.sessions && <p className="muted">{t("阅读或实验结束后，记录理解变化与下一步。")}</p>}</section></>;
 }

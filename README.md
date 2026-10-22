@@ -181,7 +181,14 @@ Keep the GitHub repository private when sharing it or inviting collaborators. Th
 
 ## Development and verification
 
+分页、连接池、后台任务和证据健康检查放在 `backend/` 下的独立模块里（`pool.py`、`paging.py`、`jobs.py`、`link_checker.py`、`evidence_health.py`），详见 [工程和规模化与证据健康检查](docs/engineering-and-evidence-health.md)。
+
+所有会写数据的测试都必须指向**隔离的测试数据库**，勿对个人正式数据库运行。先建一个空的测试库，然后：
+
 ```powershell
+$env:TEST_DATABASE_URL = "postgresql://用户:密码@127.0.0.1:5432/测试库"
+.\.venv\Scripts\python.exe -m pyflakes backend scripts
+.\.venv\Scripts\python.exe -m pytest backend/tests          # 每个用例使用独立的临时 schema
 Set-Location frontend_Web
 npm run check:i18n
 npm run test:i18n
@@ -198,3 +205,7 @@ The reading navigation tests use mocked APIs. Other backend and browser acceptan
 Third-party code, models, and datasets remain subject to their original licenses. Official source snapshots used in the case study are local research caches and are not committed to the repository. See the source manifests and notes for pinned versions and original sources.
 
 Source import and document export: [guide](docs/import-export.md). Saved and shareable research learning paths: [guide](docs/learning-paths.md).
+
+## Scale and evidence health
+
+Pagination, bounded graph rendering, pooled database connections, asynchronous backup restore and evidence-health checks are integrated with workspace permissions and bilingual navigation. See [engineering and evidence health](docs/engineering-and-evidence-health.md). Apply migrations through V009 to a deployment before starting the updated services.

@@ -2,12 +2,14 @@ import { t, msg, useLanguage } from "../i18n";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Plus, ArrowUpRight, Save, Archive, RotateCcw, Paperclip, Download } from "lucide-react";
-import { api, write } from "../services/api";
+import { api, apiPage, write } from "../services/api";
 import { Badge, CollapsiblePanel, Field, PageTitle, SelectKind, Empty, ErrorBox, Markdown, DateText, RELATIONS } from "../components/shared";
 import ReadingNavigator from "../components/ReadingNavigator";
 import RelationEditor from "../components/RelationEditor";
 import { DeleteButton, useWorkspaceChanges } from "../components/RecordActions";
 import useDraft from "../hooks/useDraft";
+import Pager from '../components/Pager';
+const PAGE_SIZE = 24;
 import CollaborationPanel from '../components/CollaborationPanel';
 export function KnowledgeList() {
   useLanguage();
@@ -16,22 +18,19 @@ export function KnowledgeList() {
     [kind, setKind] = useState(""),
     [error, setError] = useState(""),
     [archived, setArchived] = useState(false),
+    [offset, setOffset] = useState(0),
+    [total, setTotal] = useState(0),
     [refresh, setRefresh] = useState(0);
   const navigate = useNavigate();
   useEffect(() => {
     let alive = true;
-    api(`/objects?q=${encodeURIComponent(q)}&kind=${kind}&archived=${archived}`).then(rows => {
-      if (alive) {
-        setObjects(rows);
-        setError("");
-      }
-    }).catch(e => {
-      if (alive) setError(e.message);
-    });
+    apiPage(`/objects?q=${encodeURIComponent(q)}&kind=${kind}&archived=${archived}&limit=${PAGE_SIZE}&offset=${offset}`).then(({items, total}) => {
+      if (alive) { setObjects(items); setTotal(total); setError(''); }
+    }).catch(e => { if (alive) setError(e.message); });
     return () => {
       alive = false;
     };
-  }, [q, kind, archived, refresh]);
+  }, [q, kind, archived, refresh, offset]);
   useWorkspaceChanges(() => setRefresh(v => v + 1));
   async function add() {
     try {
@@ -44,7 +43,7 @@ export function KnowledgeList() {
       setError(e.message);
     }
   }
-  return <><PageTitle eyebrow={t("KNOWLEDGE LIBRARY")} title={t("知识与资料")} actions={<button onClick={add}><Plus size={16} />{t("新建笔记")}</button>}>{t("每一份理解，都可以连接到资料、代码和实验。")}</PageTitle><div className="toolbar"><input aria-label={t("搜索知识")} value={q} onChange={e => setQ(e.target.value)} placeholder={t("搜索标题、正文或标签…")} /><select aria-label={t("筛选类型")} value={kind} onChange={e => setKind(e.target.value)}><option value="">{t("全部类型")}</option>{["concept", "resource", "repository", "model", "dataset", "benchmark", "experiment", "question", "task"].map(k => <option key={k} value={k}>{{
+  return <><PageTitle eyebrow={t("KNOWLEDGE LIBRARY")} title={t("知识与资料")} actions={<button onClick={add}><Plus size={16} />{t("新建笔记")}</button>}>{t("每一份理解，都可以连接到资料、代码和实验。")}</PageTitle><div className="toolbar"><input aria-label={t("搜索知识")} value={q} onChange={e => { setQ(e.target.value); setOffset(0); }} placeholder={t("搜索标题、正文或标签…")} /><select aria-label={t("筛选类型")} value={kind} onChange={e => { setKind(e.target.value); setOffset(0); }}><option value="">{t("全部类型")}</option>{["concept", "resource", "repository", "model", "dataset", "benchmark", "experiment", "question", "task"].map(k => <option key={k} value={k}>{{
             concept: t("概念"),
             resource: t("资料"),
             repository: t("代码仓库"),
@@ -54,14 +53,14 @@ export function KnowledgeList() {
             experiment: t("实验"),
             question: t("问题"),
             task: t("任务")
-          }[k]}</option>)}</select><label className="check"><input type="checkbox" checked={archived} onChange={e => setArchived(e.target.checked)} />{t("包含归档")}</label></div><ErrorBox message={error} /><div className="knowledge-grid">{objects.map(o => <article key={o.id} className={`knowledge-card ${o.archived_at ? "archived" : ""}`}><Link className="knowledge-card-content" aria-label={t("阅读：{0}", {
+          }[k]}</option>)}</select><label className="check"><input type="checkbox" checked={archived} onChange={e => { setArchived(e.target.checked); setOffset(0); }} />{t("包含归档")}</label></div><ErrorBox message={error} /><div className="knowledge-grid">{objects.map(o => <article key={o.id} className={`knowledge-card ${o.archived_at ? "archived" : ""}`}><Link className="knowledge-card-content" aria-label={t("阅读：{0}", {
           "0": o.title
         })} to={`/knowledge/${o.id}`}><div className="flex items-center justify-between"><Badge kind={o.kind} /><ArrowUpRight size={15} /></div><h3>{o.title}</h3><p>{o.summary || o.body_md.slice(0, 95) || t("添加你的理解、来源与下一步。")}</p><div className="card-footer"><span>{o.archived_at ? t("已归档") : {
                 unread: t("待处理"),
                 skimming: t("浏览中"),
                 reading: t("精读中"),
                 organized: t("已整理")
-              }[o.reading_status]}</span><span>{o.tags.slice(0, 2).map(t => `#${t}`).join(" ")}</span></div></Link><div className="actions"><Link className="button ghost" to={`/knowledge/${o.id}?mode=edit`}>{t("修改笔记")}</Link><DeleteButton kind="object" id={o.id} title={o.title} /></div></article>)}</div>{!objects.length && !error && <Empty />}</>;
+              }[o.reading_status]}</span><span>{o.tags.slice(0, 2).map(t => `#${t}`).join(" ")}</span></div></Link><div className="actions"><Link className="button ghost" to={`/knowledge/${o.id}?mode=edit`}>{t("修改笔记")}</Link><DeleteButton kind="object" id={o.id} title={o.title} /></div></article>)}</div><Pager total={total} limit={PAGE_SIZE} offset={offset} onChange={setOffset} />{!objects.length && !error && <Empty />}</>;
 }
 function editable(o) {
   return {
