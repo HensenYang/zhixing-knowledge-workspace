@@ -19,9 +19,10 @@ env:
   TEST_DATABASE_URL: postgresql://workspace_test:workspace_test@localhost:5432/zhixing_test
 
 jobs:
+  # Pin the OS: Playwright 1.51.1 supports Ubuntu 24.04, but not Ubuntu 26.04.
   backend:
     name: Backend (lint + tests)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
@@ -61,7 +62,7 @@ jobs:
 
   frontend:
     name: Front end (build)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: frontend_Web
@@ -78,7 +79,7 @@ jobs:
 
   e2e:
     name: End-to-end (browser)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [backend, frontend]
     services:
       postgres:
